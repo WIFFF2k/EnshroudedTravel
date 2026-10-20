@@ -11,7 +11,7 @@ public sealed partial class RuntimeTravelService {
     private const byte NativeZoomCount = 4;
     private const byte ExtendedZoomCount = 5;
     private const int OriginalZoomBits = 0x3F333333;
-    private const int ReducedZoomBits = 0x3F000000;
+    private const int ReducedZoomBits = 0x3EE66666;
     private const string ZoomTemplateHash = "316d5476d609fe1e4e8c280733daf218a8cc3d8c6a2861717400417a79b694a8";
     private readonly byte[] zoomTemplate;
     private long zoomAddress, zoomCodeAddress;
@@ -119,7 +119,7 @@ public sealed partial class RuntimeTravelService {
         if(zoomAddress==0)return;
         try {
             ZoomEnabled=ReadZoomState();ZoomReady=true;
-            ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.5":"已关闭 · 原生缩放档位为 16/8/4/2";
+            ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2";
         } catch(Exception ex) {
             ZoomReady=false;ZoomEnabled=false;
             ZoomStatus="地图缩放状态已变化 · 请重新校验";
@@ -143,7 +143,7 @@ public sealed partial class RuntimeTravelService {
             if(zoomCodeAddress==0)throw new IOException("ZOOM_CODE_NOT_FOUND：地图缩放代码尚未定位");
             ownsZoomChange=true;
             if(enable) {
-                WriteProtected(writer,zoomAddress+ZoomScaleOffset,BitConverter.GetBytes(0.5f),4);
+                WriteProtected(writer,zoomAddress+ZoomScaleOffset,BitConverter.GetBytes(0.45f),4);
                 WriteProtected(writer,zoomCodeAddress,new[]{ExtendedZoomCount},0x40);
             } else {
                 WriteProtected(writer,zoomCodeAddress,new[]{NativeZoomCount},0x40);
@@ -152,8 +152,8 @@ public sealed partial class RuntimeTravelService {
             ZoomEnabled=ReadZoomState();ZoomReady=true;
             if(ZoomEnabled!=enable)throw new IOException("VERIFY_FAILED：地图缩放状态回读不一致");
             ownsZoomChange=ZoomEnabled;
-            ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.5":"已关闭 · 原生缩放档位为 16/8/4/2";
-            Log(enable?"已开启更小缩放，地图缩放档位为 16/8/4/2/0.5":"已关闭更小缩放，地图缩放档位已恢复");
+            ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2";
+            Log(enable?"已开启更小缩放，地图缩放档位为 16/8/4/2/0.45":"已关闭更小缩放，地图缩放档位已恢复");
         } finally {Native.CloseHandle(writer);}
     }
     private void WriteZoomCache() {
