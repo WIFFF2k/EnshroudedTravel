@@ -52,6 +52,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             if(ownsChange && SessionEnded()) { Toggle(false); Log("离开世界，已关闭传送"); }
             try { Enabled=ReadState(); Ready=true; }
             catch { Ready=false; Status="目标数据已变化 · 请重新校验"; throw; }
+            RefreshShroudTravelState();
             Status=Enabled?"已启用 · 多类地点可传送":"已关闭 · 可直接启用";
             return;
         }
@@ -80,6 +81,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             if(address==0) throw new IOException("REGISTRY_MISSING：尚未找到传送数据，进入世界后点击重新校验");
             Enabled=ReadState(); ownsChange=false; Ready=true;
             RefreshZoomState();
+            RefreshShroudTravelState();
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
             Status=Enabled?"已启用 · 多类地点传送":"已关闭 · 可直接启用";
@@ -87,6 +89,8 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Log("已加载 "+travelOffsets.Length+" 类地点传送配置");
             if(ZoomReady)Log("已定位地图缩放数据，可扩展为五档缩放");
             else if(!string.IsNullOrEmpty(ZoomStatus))Log(ZoomStatus);
+            if(ShroudTravelReady)Log("已定位瘴气传送限制");
+            else if(!string.IsNullOrEmpty(ShroudTravelStatus))Log(ShroudTravelStatus);
         } catch(OperationCanceledException) {
             if(!ownsChange)ReleaseExited();
             Ready=false;Status="定位已取消 · 点击重新校验重试";throw;
@@ -254,6 +258,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(process!=null && !process.HasExited && ownsZoomChange) {
             try {ToggleZoom(false);} catch(Exception ex) {errors.Add(ex);}
         }
+        if(process!=null && !process.HasExited && ownsShroudTravelChange) {
+            try {ToggleShroudTravel(false);} catch(Exception ex) {errors.Add(ex);}
+        }
         if(errors.Count==1)throw errors[0];
         if(errors.Count>1)throw new AggregateException("MEMORY_RESTORE：传送和缩放修改均未完全恢复",errors);
         if(process==null || process.HasExited)ReleaseExited();
@@ -263,6 +270,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(handle!=IntPtr.Zero)Native.CloseHandle(handle); handle=IntPtr.Zero;
         if(process!=null)process.Dispose();process=null;address=0;Ready=false;Enabled=false;ownsChange=false;
         ReleaseZoom();
+        ReleaseShroudTravel();
     }
     public void Dispose() {
         // 恢复失败必须交给界面显示，不能静默退出

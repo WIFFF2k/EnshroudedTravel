@@ -8,7 +8,7 @@ public sealed class MainForm : Form {
     private readonly TravelService service;
     private readonly RuntimeTravelService runtime;
     private readonly Label connection = new Label(), backup = new Label();
-    private readonly Button enable = new Button(), zoom = new Button(), save = new Button(), refresh = new Button();
+    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), save = new Button(), refresh = new Button();
     private readonly TextBox log = new TextBox();
     private readonly Label location = new Label();
     private readonly ProgressBar progress = new ProgressBar();
@@ -27,17 +27,18 @@ public sealed class MainForm : Form {
         FormBorderStyle=FormBorderStyle.FixedSingle; MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen;
         var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=8,Padding=new Padding(24),AutoSize=false};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        foreach(int height in new[]{48,42,60,108,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
+        foreach(int height in new[]{48,42,60,162,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent,100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute,42));
         layout.Controls.Add(new Label {Text="雾锁王国修改器",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,19,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft},0,0);
         int row=1; foreach(var label in new[]{connection,backup}) {label.Dock=DockStyle.Fill; label.TextAlign=ContentAlignment.MiddleLeft; label.AutoEllipsis=true; layout.Controls.Add(label,0,row++);}
-        var actions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=3,RowCount=2,Margin=Padding.Empty};
-        // 保持原四列布局的按钮宽度，剩余空间留在右侧
-        for(int i=0;i<2;i++){actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));actions.RowStyles.Add(new RowStyle(SizeType.Percent,50));}
+        var actions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=3,RowCount=3,Margin=Padding.Empty};
+        // 保持现有按钮宽度，剩余空间留在右侧
+        for(int i=0;i<2;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        var buttons=new[]{save,refresh,enable,zoom};
+        for(int i=0;i<3;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        var buttons=new[]{save,refresh,enable,zoom,shroud};
         for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); b.FlatStyle=FlatStyle.Flat; b.BackColor=Color.FromArgb(49,61,77); b.ForeColor=ForeColor; actions.Controls.Add(b,i%2,i/2);}
-        enable.Text="启用传送"; enable.BackColor=Color.FromArgb(21,103,91); save.Text="备份存档"; refresh.Text="校验状态"; zoom.Text="开启更小缩放";
+        enable.Text="启用传送"; enable.BackColor=Color.FromArgb(21,103,91); save.Text="备份存档"; refresh.Text="校验状态"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送";
         layout.Controls.Add(actions,0,3);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
         location.Dock=DockStyle.Fill;location.TextAlign=ContentAlignment.MiddleLeft;location.AutoEllipsis=true;location.Text="等待游戏启动后自动寻找传送数据";
@@ -59,6 +60,10 @@ public sealed class MainForm : Form {
         zoom.Click+=async delegate {
             bool turnOn=!runtime.ZoomEnabled;
             await Run(delegate {runtime.ToggleZoom(turnOn);},turnOn?"正在开启更小缩放":"正在关闭更小缩放");
+        };
+        shroud.Click+=async delegate {
+            bool turnOn=!runtime.ShroudTravelEnabled;
+            await Run(delegate {runtime.ToggleShroudTravel(turnOn);},turnOn?"正在允许瘴气中传送":"正在恢复瘴气传送限制");
         };
         save.Click+=async delegate {await Run(delegate {service.BackupSaves();},"正在备份存档");};
         refresh.Click+=async delegate {await Run(delegate {runtime.Poll(true,cancellation.Token);},"正在重新校验");};
@@ -95,7 +100,8 @@ public sealed class MainForm : Form {
             busy=false;
             if(!IsDisposed&&!Disposing){
                 cancel.Enabled=false;progress.Style=ProgressBarStyle.Continuous;
-                if(runtime.Ready&&runtime.ZoomReady){progress.Value=1000;location.Text="定位完成，可以使用传送与地图缩放开关";}
+                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady){progress.Value=1000;location.Text="定位完成，可以使用传送、缩放与瘴气传送开关";}
+                else if(runtime.Ready&&runtime.ZoomReady){progress.Value=1000;location.Text="传送与缩放已就绪 · "+runtime.ShroudTravelStatus;}
                 else if(runtime.Ready){progress.Value=1000;location.Text=string.IsNullOrEmpty(runtime.ZoomStatus)?"传送已就绪，地图缩放尚未就绪":"传送已就绪 · "+runtime.ZoomStatus;}
                 else {progress.Value=0;location.Text=runtime.Status;}
                 UpdateState();
@@ -127,6 +133,9 @@ public sealed class MainForm : Form {
         zoom.Text=runtime.ZoomEnabled?"关闭更小缩放":"开启更小缩放";
         zoom.BackColor=runtime.ZoomEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
         zoom.Enabled=!busy&&!closing&&runtime.ZoomReady;
+        shroud.Text=runtime.ShroudTravelEnabled?"恢复瘴气限制":"允许瘴气中传送";
+        shroud.BackColor=runtime.ShroudTravelEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
+        shroud.Enabled=!busy&&!closing&&(runtime.ShroudTravelReady||runtime.ShroudTravelNeedsRestore);
         save.Enabled=!busy&&!closing&&!runtime.Running;refresh.Enabled=!busy&&!closing;
     }
 }
