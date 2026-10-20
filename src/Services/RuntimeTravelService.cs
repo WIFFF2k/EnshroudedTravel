@@ -42,6 +42,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         original=File.ReadAllBytes(path);
         travelOffsets=BuildTravelOffsets(original);
         zoomTemplate=LoadZoomTemplate(files.Root);
+        storageRecipeTemplate=LoadStorageRecipeTemplate(files.Root);
         Connection="未连接 · 等待游戏启动"; Status="等待游戏启动";
     }
     public void Poll(bool retry,CancellationToken cancel) {
@@ -261,8 +262,11 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(process!=null && !process.HasExited && ownsShroudTravelChange) {
             try {ToggleShroudTravel(false);} catch(Exception ex) {errors.Add(ex);}
         }
+        if(process!=null && !process.HasExited && ownsStorageUpgradeChange) {
+            try {ToggleStorageUpgrade(false);} catch(Exception ex) {errors.Add(ex);}
+        }
         if(errors.Count==1)throw errors[0];
-        if(errors.Count>1)throw new AggregateException("MEMORY_RESTORE：传送和缩放修改均未完全恢复",errors);
+        if(errors.Count>1)throw new AggregateException("MEMORY_RESTORE：多项内存修改均未完全恢复",errors);
         if(process==null || process.HasExited)ReleaseExited();
     }
     private void ReleaseExited() {
@@ -271,6 +275,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(process!=null)process.Dispose();process=null;address=0;Ready=false;Enabled=false;ownsChange=false;
         ReleaseZoom();
         ReleaseShroudTravel();
+        ReleaseStorageUpgrade();
     }
     public void Dispose() {
         // 恢复失败必须交给界面显示，不能静默退出

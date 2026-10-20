@@ -8,7 +8,7 @@ public sealed class MainForm : Form {
     private readonly TravelService service;
     private readonly RuntimeTravelService runtime;
     private readonly Label connection = new Label(), backup = new Label();
-    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), save = new Button(), refresh = new Button();
+    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), refresh = new Button();
     private readonly TextBox log = new TextBox();
     private readonly Label location = new Label();
     private readonly ProgressBar progress = new ProgressBar();
@@ -32,14 +32,13 @@ public sealed class MainForm : Form {
         layout.Controls.Add(new Label {Text="雾锁王国修改器",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,19,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft},0,0);
         int row=1; foreach(var label in new[]{connection,backup}) {label.Dock=DockStyle.Fill; label.TextAlign=ContentAlignment.MiddleLeft; label.AutoEllipsis=true; layout.Controls.Add(label,0,row++);}
         var actions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=2,Margin=Padding.Empty};
-        // 三个按钮列保持固定宽度，末列保留右侧空白
-        for(int i=0;i<3;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        // 四个按钮列保持固定宽度，完整使用操作区宽度
+        for(int i=0;i<4;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
         for(int i=0;i<2;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        var buttons=new[]{save,refresh,enable,zoom,shroud};
-        var cells=new[]{0,0,1,0,0,1,1,1,2,1};
+        var buttons=new[]{save,refresh,enable,zoom,shroud,storage};
+        var cells=new[]{0,0,1,0,0,1,1,1,2,1,3,1};
         for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); b.FlatStyle=FlatStyle.Flat; b.BackColor=Color.FromArgb(49,61,77); b.ForeColor=ForeColor; actions.Controls.Add(b,cells[i*2],cells[i*2+1]);}
-        enable.Text="启用传送"; enable.BackColor=Color.FromArgb(21,103,91); save.Text="备份存档"; refresh.Text="校验状态"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送";
+        enable.Text="启用传送"; enable.BackColor=Color.FromArgb(21,103,91); save.Text="备份存档"; refresh.Text="校验状态"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送"; storage.Text="免费增大箱子";
         layout.Controls.Add(actions,0,3);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
         location.Dock=DockStyle.Fill;location.TextAlign=ContentAlignment.MiddleLeft;location.AutoEllipsis=true;location.Text="等待游戏启动后自动寻找传送数据";
@@ -65,6 +64,10 @@ public sealed class MainForm : Form {
         shroud.Click+=async delegate {
             bool turnOn=!runtime.ShroudTravelEnabled;
             await Run(delegate {runtime.ToggleShroudTravel(turnOn);},turnOn?"正在允许瘴气中传送":"正在恢复瘴气传送限制");
+        };
+        storage.Click+=async delegate {
+            bool turnOn=!runtime.StorageUpgradeEnabled;
+            await Run(delegate {runtime.ToggleStorageUpgrade(turnOn);},turnOn?"正在启用免费箱子升级":"正在关闭免费箱子升级");
         };
         save.Click+=async delegate {await Run(delegate {service.BackupSaves();},"正在备份存档");};
         refresh.Click+=async delegate {await Run(delegate {runtime.Poll(true,cancellation.Token);},"正在重新校验");};
@@ -137,6 +140,9 @@ public sealed class MainForm : Form {
         shroud.Text=runtime.ShroudTravelEnabled?"恢复瘴气限制":"允许瘴气中传送";
         shroud.BackColor=runtime.ShroudTravelEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
         shroud.Enabled=!busy&&!closing&&(runtime.ShroudTravelReady||runtime.ShroudTravelNeedsRestore);
+        storage.Text=runtime.StorageUpgradeEnabled?"关闭免费箱子升级":"免费增大箱子";
+        storage.BackColor=runtime.StorageUpgradeEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
+        storage.Enabled=!busy&&!closing&&(runtime.Ready||runtime.StorageUpgradeNeedsRestore);
         save.Enabled=!busy&&!closing&&!runtime.Running;refresh.Enabled=!busy&&!closing;
     }
 }
