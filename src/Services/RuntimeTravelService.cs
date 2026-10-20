@@ -83,7 +83,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
             Status=Enabled?"已启用 · 可关闭恢复":"已关闭 · 可直接启用";
             Log("已核验完整注册表，定位耗时 "+watch.Elapsed.TotalSeconds.ToString("0.00")+" 秒");
-            if(ZoomReady)Log("已定位地图缩放数据，最远视野可扩大五倍");
+            if(ZoomReady)Log("已定位地图缩放数据，可扩展为五档缩放");
             else if(!string.IsNullOrEmpty(ZoomStatus))Log(ZoomStatus);
         } catch(OperationCanceledException) {
             if(!ownsChange)ReleaseExited();
