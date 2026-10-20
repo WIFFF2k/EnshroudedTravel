@@ -27,17 +27,18 @@ public sealed class MainForm : Form {
         FormBorderStyle=FormBorderStyle.FixedSingle; MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen;
         var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=8,Padding=new Padding(24),AutoSize=false};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        foreach(int height in new[]{48,42,60,162,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
+        foreach(int height in new[]{48,42,60,108,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent,100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute,42));
         layout.Controls.Add(new Label {Text="雾锁王国修改器",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,19,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft},0,0);
         int row=1; foreach(var label in new[]{connection,backup}) {label.Dock=DockStyle.Fill; label.TextAlign=ContentAlignment.MiddleLeft; label.AutoEllipsis=true; layout.Controls.Add(label,0,row++);}
-        var actions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=3,RowCount=3,Margin=Padding.Empty};
-        // 保持现有按钮宽度，剩余空间留在右侧
-        for(int i=0;i<2;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
+        var actions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=2,Margin=Padding.Empty};
+        // 三个按钮列保持固定宽度，末列保留右侧空白
+        for(int i=0;i<3;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        for(int i=0;i<3;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        for(int i=0;i<2;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         var buttons=new[]{save,refresh,enable,zoom,shroud};
-        for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); b.FlatStyle=FlatStyle.Flat; b.BackColor=Color.FromArgb(49,61,77); b.ForeColor=ForeColor; actions.Controls.Add(b,i%2,i/2);}
+        var cells=new[]{0,0,1,0,0,1,1,1,2,1};
+        for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); b.FlatStyle=FlatStyle.Flat; b.BackColor=Color.FromArgb(49,61,77); b.ForeColor=ForeColor; actions.Controls.Add(b,cells[i*2],cells[i*2+1]);}
         enable.Text="启用传送"; enable.BackColor=Color.FromArgb(21,103,91); save.Text="备份存档"; refresh.Text="校验状态"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送";
         layout.Controls.Add(actions,0,3);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
