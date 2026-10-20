@@ -19,7 +19,9 @@ public sealed partial class RuntimeTravelService {
         3050313574, // 村庄
         1755200041, // 矿点
         1789853740, // 幸存者营地
-        3675766579  // 洞穴
+        3675766579, // 洞穴
+        660000613,  // 瘴气巢穴与瘴气根
+        4293256260  // 魔药之井
     };
 
     private static int[] BuildTravelOffsets(byte[] template) {
