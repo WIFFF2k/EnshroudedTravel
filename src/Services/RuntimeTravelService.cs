@@ -1,0 +1,249 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Globalization;
+using System.Collections.Generic;
+
+namespace EnshroudedTravel {
+public sealed class LocationProgress {
+    public string Connection, Message;
+    public long Completed, Total, Unreadable;
+    public double Seconds;
+    public bool Scanning;
+}
+public sealed class RuntimeTravelService : IDisposable {
+    private const int FlagOffset = 1956;
+    private const string RegistryHash = "da6cb531da4c25df7f0bb03ee316018b9cf5356afa09220f3fcce6032c9c7a53";
+    private readonly TravelService files;
+    private readonly byte[] original;
+    private Process process;
+    private IntPtr handle;
+    private long address, logPosition;
+    private string logTail = "";
+    private int attemptedPid;
+    private long attemptedStart;
+    private bool ownsChange;
+    public bool Ready { get; private set; }
+    public bool Enabled { get; private set; }
+    public bool Running { get; private set; }
+    public bool NeedsRestore { get { return ownsChange; } }
+    public string Connection { get; private set; }
+    public string Status { get; private set; }
+    public Action<string> Log = delegate {};
+    public IProgress<LocationProgress> Progress;
+    public RuntimeTravelService(TravelService instance) {
+        // 载入与当前版本绑定的完整注册表模板
+        files=instance;
+        string path=Path.Combine(files.Root,"payload","registry-original.bin");
+        if(TravelService.HashFile(path)!=RegistryHash) throw new IOException("TEMPLATE_INVALID：定位模板校验失败");
+        original=File.ReadAllBytes(path);
+        Connection="未连接 · 等待游戏启动"; Status="等待游戏启动";
+    }
+    public void Poll(bool retry,CancellationToken cancel) {
+        // 同一进程复用已验证地址，新进程必须重新定位
+        if(retry && process!=null && !Ready && !ownsChange) {ReleaseExited();attemptedPid=0;}
+        if(process!=null && !process.HasExited) {
+            Running=true;
+            if(ownsChange && SessionEnded()) { Toggle(false); Log("离开世界，已关闭传送"); }
+            try { Enabled=ReadState(); Ready=true; }
+            catch { Ready=false; Status="目标数据已变化 · 请重新校验"; throw; }
+            Status=Enabled?"已启用 · 无需重启":"已关闭 · 可直接启用";
+            return;
+        }
+        ReleaseExited();
+        var candidates=Process.GetProcessesByName("enshrouded");
+        try {
+            Running=candidates.Length>0;
+            if(!Running) { attemptedPid=0; Status="等待游戏启动"; Connection="未连接 · 等待游戏启动"; return; }
+            if(candidates.Length!=1) throw new IOException("MULTIPLE_GAMES：检测到多个游戏，请仅运行一个实例");
+            var candidate=candidates[0]; long started=candidate.StartTime.ToUniversalTime().Ticks;
+            Connection="已发现 · PID "+candidate.Id;
+            if(!retry && candidate.Id==attemptedPid && started==attemptedStart) return;
+            attemptedPid=candidate.Id; attemptedStart=started;
+            Report("已发现游戏，正在校验版本");
+            string path=candidate.MainModule.FileName;
+            if(!string.Equals(Path.GetFullPath(path),Path.Combine(files.Game,"enshrouded.exe"),StringComparison.OrdinalIgnoreCase)) throw new IOException("GAME_PATH：游戏运行目录与配置不一致");
+            if(TravelService.HashFile(path)!=TravelService.ExeHash) throw new IOException("VERSION_MISMATCH：当前游戏版本尚未适配");
+            if(files.State()!="已关闭") throw new IOException("DISK_PATCH：磁盘资源不是原版，请退出游戏后恢复旧补丁");
+            process=Process.GetProcessById(candidate.Id);
+            if(process.StartTime.ToUniversalTime().Ticks!=started) throw new IOException("PROCESS_CHANGED：游戏已经重新启动");
+            handle=Native.OpenProcess(0x410,false,process.Id);
+            if(handle==IntPtr.Zero) throw Native.Error("PROCESS_ACCESS：无法读取游戏进程");
+            Status="正在定位传送数据"; Log("正在定位传送数据");
+            var watch=Stopwatch.StartNew();
+            address=FindRegistry(cancel);
+            if(address==0) throw new IOException("REGISTRY_MISSING：尚未找到传送数据，进入世界后点击重新校验");
+            Enabled=ReadState(); ownsChange=false; Ready=true;
+            ResetLog();
+            Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
+            Status=Enabled?"已启用 · 可关闭恢复":"已关闭 · 可直接启用";
+            Log("已核验完整注册表，定位耗时 "+watch.Elapsed.TotalSeconds.ToString("0.00")+" 秒");
+        } catch(OperationCanceledException) {
+            if(!ownsChange)ReleaseExited();
+            Ready=false;Status="定位已取消 · 点击重新校验重试";throw;
+        } catch {
+            if(!ownsChange) ReleaseExited();
+            Ready=false; Status="连接未完成 · 请查看记录"; throw;
+        } finally { foreach(var p in candidates)p.Dispose(); }
+    }
+    private long FindRegistry(CancellationToken cancel) {
+        // 同次游戏缓存仅作为候选地址，始终复核完整注册表
+        cancel.ThrowIfCancellationRequested();Report("正在核对本次游戏的定位缓存");
+        string cache=Path.Combine(files.Root,"runtime-location.txt");
+        if(File.Exists(cache)) {
+            string[] fields=File.ReadAllLines(cache);long cached,start;int pid;
+            if(fields.Length==4 && fields[0]==TravelService.ExeHash && int.TryParse(fields[1],out pid) && long.TryParse(fields[2],out start) && long.TryParse(fields[3],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out cached) && cached>0 && pid==process.Id && start==process.StartTime.ToUniversalTime().Ticks) {
+                byte[] existing=ReadAt(cached);
+                if(existing!=null && Matches(existing)){Log("本次游戏地址复核通过");return cached;}
+            }
+        }
+        // 用目标图标的三十二字节特征跳跃搜索，保留全域唯一性检查
+        const int anchor=1960,width=32;
+        byte[] pattern=original.Skip(anchor).Take(width).ToArray();
+        int[] skip=Enumerable.Repeat(width,256).ToArray();
+        for(int i=0;i<width-1;i++)skip[pattern[i]]=width-1-i;
+        byte[] buffer=new byte[2*1024*1024]; long cursor=0,found=0;
+        var regions=new List<Native.Region>();long total=0,done=0,unreadable=0;
+        Report("正在统计可搜索的内存区域");
+        Native.Region region;
+        while(Native.VirtualQueryEx(handle,new IntPtr(cursor),out region,(UIntPtr)Marshal.SizeOf(typeof(Native.Region)))!=UIntPtr.Zero) {
+            cancel.ThrowIfCancellationRequested();
+            long start=region.BaseAddress.ToInt64(),length=checked((long)region.RegionSize.ToUInt64());
+            if(length<=0 || start>long.MaxValue-length) break;
+            long end=start+length; uint access=region.Protect&255;
+            if(region.State==0x1000 && (region.Protect&0x100)==0 && (access==2||access==4||access==8||access==0x20||access==0x40||access==0x80)) {
+                regions.Add(region);total+=length;
+            }
+            cursor=end;
+        }
+        var elapsed=Stopwatch.StartNew();long lastReport=-250;
+        foreach(var selected in regions) {
+                long start=selected.BaseAddress.ToInt64(),end=start+checked((long)selected.RegionSize.ToUInt64());
+                for(long pos=start;pos<end;) {
+                    cancel.ThrowIfCancellationRequested();
+                    int count=(int)Math.Min(buffer.Length,end-pos); UIntPtr read;
+                    if(Native.ReadProcessMemory(handle,new IntPtr(pos),buffer,(UIntPtr)count,out read)) {
+                        int available=(int)read.ToUInt64();
+                        for(int i=0;i<=available-width;) {
+                            int j=width-1;while(j>=0 && buffer[i+j]==pattern[j])j--;
+                            if(j<0 && pos+i>=anchor) {
+                                long candidate=pos+i-anchor;byte[] data=ReadAt(candidate);
+                                if(data!=null && Matches(data)) {
+                                    if(found!=0 && found!=candidate)throw new IOException("REGISTRY_AMBIGUOUS：发现多个注册表，未修改内存");
+                                    found=candidate;
+                                }
+                            }
+                            i+=skip[buffer[i+width-1]];
+                        }
+                    } else {unreadable+=count;}
+                    long step=pos+count<end?Math.Max(1,count-width+1):count;
+                    pos+=step;done+=step;
+                    if(elapsed.ElapsedMilliseconds-lastReport>=250 || done==total) {
+                        lastReport=elapsed.ElapsedMilliseconds;
+                        Report("正在寻找传送数据",done,total,unreadable,elapsed.Elapsed.TotalSeconds,true);
+                    }
+                }
+        }
+        cancel.ThrowIfCancellationRequested();
+        if(unreadable>0)Log("扫描期间有 "+(unreadable/1048576.0).ToString("0.0")+" MB 内存变为不可读");
+        Report("扫描完成，正在核验定位结果",done,total,unreadable,elapsed.Elapsed.TotalSeconds,false);
+        if(found!=0)File.WriteAllLines(cache,new[]{TravelService.ExeHash,process.Id.ToString(),process.StartTime.ToUniversalTime().Ticks.ToString(),found.ToString("X")});
+        return found;
+    }
+    private void Report(string message,long done=0,long total=0,long unreadable=0,double seconds=0,bool scanning=false) {
+        // 发布实际搜索字节与耗时，不使用按时间递增的虚假进度
+        if(Progress!=null)Progress.Report(new LocationProgress {Connection=Connection,Message=message,Completed=done,Total=total,Unreadable=unreadable,Seconds=seconds,Scanning=scanning});
+    }
+    private byte[] ReadAt(long location) {
+        // 严格读取一份完整注册表，不用部分数据推断成功
+        byte[] data=new byte[original.Length]; UIntPtr read;
+        return Native.ReadProcessMemory(handle,new IntPtr(location),data,(UIntPtr)data.Length,out read) && read.ToUInt64()==(ulong)data.Length?data:null;
+    }
+    private bool Matches(byte[] data) {
+        // 只允许已验证目标开关在零与一之间变化
+        if(data.Length!=original.Length || data[FlagOffset]>1)return false;
+        for(int i=0;i<data.Length;i++)if(i!=FlagOffset && data[i]!=original[i])return false;
+        return true;
+    }
+    private bool ReadState() {
+        // 每次点击和状态轮询都重新检查目标数据
+        if(process==null || process.HasExited) throw new IOException("GAME_EXITED：游戏已退出");
+        byte[] data=ReadAt(address);
+        if(data==null || !Matches(data))throw new IOException("REGISTRY_CHANGED：目标数据已变化，未继续写入");
+        return data[FlagOffset]==1;
+    }
+    public void Toggle(bool enable) {
+        // 临时授予目标页写权限，仅写一个字节并核验恢复权限
+        bool current=ReadState();
+        if(current==enable) { Enabled=current; if(!enable)ownsChange=false; return; }
+        IntPtr writer=Native.OpenProcess(0x438,false,process.Id);
+        if(writer==IntPtr.Zero)throw Native.Error("WRITE_ACCESS：无法修改游戏内存");
+        try {
+            if(process.HasExited || ReadState()!=current)throw new IOException("PROCESS_CHANGED：操作前游戏状态已变化");
+            uint old; IntPtr target=new IntPtr(address+FlagOffset);
+            if(!Native.VirtualProtectEx(writer,target,(UIntPtr)1,4,out old))throw Native.Error("PAGE_ACCESS：无法修改目标页权限");
+            try {
+                ownsChange=true; UIntPtr written;
+                if(!Native.WriteProcessMemory(writer,target,new[]{(byte)(enable?1:0)},(UIntPtr)1,out written)||written.ToUInt64()!=1)throw Native.Error("WRITE_FAILED：开关写入失败");
+            } finally {
+                uint ignored;
+                if(!Native.VirtualProtectEx(writer,target,(UIntPtr)1,old,out ignored))throw Native.Error("PROTECTION_RESTORE：恢复目标页权限失败");
+            }
+            Enabled=ReadState();
+            if(Enabled!=enable)throw new IOException("VERIFY_FAILED：开关回读不一致");
+            ownsChange=Enabled; Ready=true;
+            Status=Enabled?"已启用 · 无需重启":"已关闭 · 已恢复";
+            if(enable)ResetLog();
+            Log(enable?"已启用，重新打开地图即可测试":"已关闭，完整注册表已恢复");
+        } finally { Native.CloseHandle(writer); }
+    }
+    private void ResetLog() {
+        // 从启用时开始跟踪已确认的世界卸载日志
+        logPosition=new FileInfo(Path.Combine(files.Game,"enshrouded.log")).Length; logTail="";
+    }
+    private bool SessionEnded() {
+        // 退出世界时取消开关，不把启用状态带入下个世界
+        using(var stream=new FileStream(Path.Combine(files.Game,"enshrouded.log"),FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete)) {
+            if(stream.Length<logPosition)return true;
+            stream.Position=logPosition; byte[] data=new byte[Math.Min(65536,stream.Length-logPosition)];
+            int n=stream.Read(data,0,data.Length);logPosition+=n;
+            string text=logTail+System.Text.Encoding.UTF8.GetString(data,0,n);
+            bool ended=text.Contains("[play] start destruction step");
+            logTail=text.Substring(Math.Max(0,text.Length-100));return ended;
+        }
+    }
+    public void Restore() {
+        // 正常关闭助手时恢复本进程中持有的改动
+        if(process!=null && !process.HasExited && ownsChange)Toggle(false);
+        else if(process==null || process.HasExited)ReleaseExited();
+    }
+    private void ReleaseExited() {
+        // 释放旧进程句柄，绝不向新进程沿用旧地址
+        if(handle!=IntPtr.Zero)Native.CloseHandle(handle); handle=IntPtr.Zero;
+        if(process!=null)process.Dispose();process=null;address=0;Ready=false;Enabled=false;ownsChange=false;
+    }
+    public void Dispose() {
+        // 恢复失败必须交给界面显示，不能静默退出
+        Restore();ReleaseExited();
+    }
+    private static class Native {
+        [StructLayout(LayoutKind.Sequential)] internal struct Region {
+            public IntPtr BaseAddress,AllocationBase;public uint AllocationProtect;public ushort PartitionId;
+            public UIntPtr RegionSize;public uint State,Protect,Type;
+        }
+        [DllImport("kernel32.dll",SetLastError=true)] internal static extern IntPtr OpenProcess(uint access,bool inherit,int id);
+        [DllImport("kernel32.dll",SetLastError=true)] internal static extern bool ReadProcessMemory(IntPtr process,IntPtr address,byte[] buffer,UIntPtr count,out UIntPtr read);
+        [DllImport("kernel32.dll",SetLastError=true)] internal static extern bool WriteProcessMemory(IntPtr process,IntPtr address,byte[] buffer,UIntPtr count,out UIntPtr written);
+        [DllImport("kernel32.dll",SetLastError=true)] internal static extern bool VirtualProtectEx(IntPtr process,IntPtr address,UIntPtr count,uint protection,out uint old);
+        [DllImport("kernel32.dll",SetLastError=true)] internal static extern UIntPtr VirtualQueryEx(IntPtr process,IntPtr address,out Region info,UIntPtr size);
+        [DllImport("kernel32.dll")] internal static extern bool CloseHandle(IntPtr handle);
+        internal static Exception Error(string message) {
+            // 保留系统错误码供诊断
+            return new IOException(message+"（系统错误 "+Marshal.GetLastWin32Error()+"）");
+        }
+    }
+}
+}
