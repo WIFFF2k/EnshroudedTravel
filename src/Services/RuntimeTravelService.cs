@@ -14,7 +14,7 @@ public sealed class LocationProgress {
     public double Seconds;
     public bool Scanning;
 }
-public sealed class RuntimeTravelService : IDisposable {
+public sealed partial class RuntimeTravelService : IDisposable {
     private const int FlagOffset = 1956;
     private const string RegistryHash = "da6cb531da4c25df7f0bb03ee316018b9cf5356afa09220f3fcce6032c9c7a53";
     private readonly TravelService files;
@@ -40,6 +40,7 @@ public sealed class RuntimeTravelService : IDisposable {
         string path=Path.Combine(files.Root,"payload","registry-original.bin");
         if(TravelService.HashFile(path)!=RegistryHash) throw new IOException("TEMPLATE_INVALID：定位模板校验失败");
         original=File.ReadAllBytes(path);
+        zoomTemplate=LoadZoomTemplate(files.Root);
         Connection="未连接 · 等待游戏启动"; Status="等待游戏启动";
     }
     public void Poll(bool retry,CancellationToken cancel) {
@@ -77,10 +78,13 @@ public sealed class RuntimeTravelService : IDisposable {
             address=FindRegistry(cancel);
             if(address==0) throw new IOException("REGISTRY_MISSING：尚未找到传送数据，进入世界后点击重新校验");
             Enabled=ReadState(); ownsChange=false; Ready=true;
+            RefreshZoomState();
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
             Status=Enabled?"已启用 · 可关闭恢复":"已关闭 · 可直接启用";
             Log("已核验完整注册表，定位耗时 "+watch.Elapsed.TotalSeconds.ToString("0.00")+" 秒");
+            if(ZoomReady)Log("已定位地图缩放数据，最远视野可扩大五倍");
+            else if(!string.IsNullOrEmpty(ZoomStatus))Log(ZoomStatus);
         } catch(OperationCanceledException) {
             if(!ownsChange)ReleaseExited();
             Ready=false;Status="定位已取消 · 点击重新校验重试";throw;
@@ -93,11 +97,18 @@ public sealed class RuntimeTravelService : IDisposable {
         // 同次游戏缓存仅作为候选地址，始终复核完整注册表
         cancel.ThrowIfCancellationRequested();Report("正在核对本次游戏的定位缓存");
         string cache=Path.Combine(files.Root,"runtime-location.txt");
+        LoadZoomCache();
+        long found=0;
         if(File.Exists(cache)) {
             string[] fields=File.ReadAllLines(cache);long cached,start;int pid;
             if(fields.Length==4 && fields[0]==TravelService.ExeHash && int.TryParse(fields[1],out pid) && long.TryParse(fields[2],out start) && long.TryParse(fields[3],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out cached) && cached>0 && pid==process.Id && start==process.StartTime.ToUniversalTime().Ticks) {
                 byte[] existing=ReadAt(cached);
-                if(existing!=null && Matches(existing)){Log("本次游戏地址复核通过");return cached;}
+                if(existing!=null && Matches(existing)){
+                    found=cached;
+                    Log("本次游戏传送地址复核通过");
+                    if(zoomAddress!=0){Log("本次游戏地图缩放地址复核通过");return cached;}
+                    Log("传送缓存已复用，继续定位地图缩放数据");
+                }
             }
         }
         // 用目标图标的三十二字节特征跳跃搜索，保留全域唯一性检查
@@ -105,7 +116,11 @@ public sealed class RuntimeTravelService : IDisposable {
         byte[] pattern=original.Skip(anchor).Take(width).ToArray();
         int[] skip=Enumerable.Repeat(width,256).ToArray();
         for(int i=0;i<width-1;i++)skip[pattern[i]]=width-1-i;
-        byte[] buffer=new byte[2*1024*1024]; long cursor=0,found=0;
+        byte[] zoomAnchor=BuildZoomAnchor();
+        int[] zoomSkip=Enumerable.Repeat(zoomAnchor.Length,256).ToArray();
+        for(int i=0;i<zoomAnchor.Length-1;i++)zoomSkip[zoomAnchor[i]]=zoomAnchor.Length-1-i;
+        bool searchZoom=zoomAddress==0;
+        byte[] buffer=new byte[2*1024*1024]; long cursor=0;
         var regions=new List<Native.Region>();long total=0,done=0,unreadable=0;
         Report("正在统计可搜索的内存区域");
         Native.Region region;
@@ -138,12 +153,13 @@ public sealed class RuntimeTravelService : IDisposable {
                             }
                             i+=skip[buffer[i+width-1]];
                         }
+                        if(searchZoom)SearchZoomBuffer(buffer,available,pos,zoomAnchor,zoomSkip);
                     } else {unreadable+=count;}
                     long step=pos+count<end?Math.Max(1,count-width+1):count;
                     pos+=step;done+=step;
                     if(elapsed.ElapsedMilliseconds-lastReport>=250 || done==total) {
                         lastReport=elapsed.ElapsedMilliseconds;
-                        Report("正在寻找传送数据",done,total,unreadable,elapsed.Elapsed.TotalSeconds,true);
+                        Report(searchZoom?"正在寻找传送与地图缩放数据":"正在寻找传送数据",done,total,unreadable,elapsed.Elapsed.TotalSeconds,true);
                     }
                 }
         }
@@ -151,6 +167,8 @@ public sealed class RuntimeTravelService : IDisposable {
         if(unreadable>0)Log("扫描期间有 "+(unreadable/1048576.0).ToString("0.0")+" MB 内存变为不可读");
         Report("扫描完成，正在核验定位结果",done,total,unreadable,elapsed.Elapsed.TotalSeconds,false);
         if(found!=0)File.WriteAllLines(cache,new[]{TravelService.ExeHash,process.Id.ToString(),process.StartTime.ToUniversalTime().Ticks.ToString(),found.ToString("X")});
+        if(zoomAddress!=0)WriteZoomCache();
+        else if(!zoomConflict)ZoomStatus="尚未找到地图缩放 · 打开地图后点击重新校验";
         return found;
     }
     private void Report(string message,long done=0,long total=0,long unreadable=0,double seconds=0,bool scanning=false) {
@@ -159,7 +177,11 @@ public sealed class RuntimeTravelService : IDisposable {
     }
     private byte[] ReadAt(long location) {
         // 严格读取一份完整注册表，不用部分数据推断成功
-        byte[] data=new byte[original.Length]; UIntPtr read;
+        return ReadAt(location,original.Length);
+    }
+    private byte[] ReadAt(long location, int length) {
+        // 按调用方要求的完整长度读取，短读视为失败
+        byte[] data=new byte[length]; UIntPtr read;
         return Native.ReadProcessMemory(handle,new IntPtr(location),data,(UIntPtr)data.Length,out read) && read.ToUInt64()==(ulong)data.Length?data:null;
     }
     private bool Matches(byte[] data) {
@@ -216,14 +238,23 @@ public sealed class RuntimeTravelService : IDisposable {
         }
     }
     public void Restore() {
-        // 正常关闭助手时恢复本进程中持有的改动
-        if(process!=null && !process.HasExited && ownsChange)Toggle(false);
-        else if(process==null || process.HasExited)ReleaseExited();
+        // 两项修改分别尝试恢复，任一项失败都必须交给界面显示
+        var errors=new List<Exception>();
+        if(process!=null && !process.HasExited && ownsChange) {
+            try {Toggle(false);} catch(Exception ex) {errors.Add(ex);}
+        }
+        if(process!=null && !process.HasExited && ownsZoomChange) {
+            try {ToggleZoom(false);} catch(Exception ex) {errors.Add(ex);}
+        }
+        if(errors.Count==1)throw errors[0];
+        if(errors.Count>1)throw new AggregateException("MEMORY_RESTORE：传送和缩放修改均未完全恢复",errors);
+        if(process==null || process.HasExited)ReleaseExited();
     }
     private void ReleaseExited() {
         // 释放旧进程句柄，绝不向新进程沿用旧地址
         if(handle!=IntPtr.Zero)Native.CloseHandle(handle); handle=IntPtr.Zero;
         if(process!=null)process.Dispose();process=null;address=0;Ready=false;Enabled=false;ownsChange=false;
+        ReleaseZoom();
     }
     public void Dispose() {
         // 恢复失败必须交给界面显示，不能静默退出

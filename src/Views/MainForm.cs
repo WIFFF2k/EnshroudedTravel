@@ -56,6 +56,10 @@ public sealed class MainForm : Form {
             bool turnOn=!(runtime.Enabled||runtime.NeedsRestore);
             await Run(delegate {runtime.Toggle(turnOn);},turnOn?"正在启用传送":"正在关闭传送");
         };
+        zoom.Click+=async delegate {
+            bool turnOn=!runtime.ZoomEnabled;
+            await Run(delegate {runtime.ToggleZoom(turnOn);},turnOn?"正在开启更小缩放":"正在关闭更小缩放");
+        };
         save.Click+=async delegate {await Run(delegate {service.BackupSaves();},"正在备份存档");};
         refresh.Click+=async delegate {await Run(delegate {runtime.Poll(true,cancellation.Token);},"正在重新校验");};
         Shown+=async delegate {await Run(delegate {runtime.Poll(true,cancellation.Token);},"正在连接与定位"); if(!closing&&!IsDisposed)timer.Start();};
@@ -91,7 +95,8 @@ public sealed class MainForm : Form {
             busy=false;
             if(!IsDisposed&&!Disposing){
                 cancel.Enabled=false;progress.Style=ProgressBarStyle.Continuous;
-                if(runtime.Ready){progress.Value=1000;location.Text="定位完成，可以使用传送开关";}
+                if(runtime.Ready&&runtime.ZoomReady){progress.Value=1000;location.Text="定位完成，可以使用传送与地图缩放开关";}
+                else if(runtime.Ready){progress.Value=1000;location.Text=string.IsNullOrEmpty(runtime.ZoomStatus)?"传送已就绪，地图缩放尚未就绪":"传送已就绪 · "+runtime.ZoomStatus;}
                 else {progress.Value=0;location.Text=runtime.Status;}
                 UpdateState();
             }
@@ -119,6 +124,9 @@ public sealed class MainForm : Form {
         bool canClose=runtime.Enabled||runtime.NeedsRestore;
         enable.Text=canClose?"关闭传送":"启用传送";
         enable.Enabled=!busy&&!closing&&(runtime.Ready||canClose);
+        zoom.Text=runtime.ZoomEnabled?"关闭更小缩放":"开启更小缩放";
+        zoom.BackColor=runtime.ZoomEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
+        zoom.Enabled=!busy&&!closing&&runtime.ZoomReady;
         save.Enabled=!busy&&!closing&&!runtime.Running;refresh.Enabled=!busy&&!closing;
     }
 }
