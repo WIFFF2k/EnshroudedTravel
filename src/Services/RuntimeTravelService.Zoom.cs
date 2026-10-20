@@ -111,7 +111,7 @@ public sealed partial class RuntimeTravelService {
             throw new IOException("ZOOM_CODE_CHANGED：地图缩放档位代码已变化，未继续写入");
         bool bundleEnabled=scale==ReducedZoomBits;
         bool codeEnabled=code[0]==ExtendedZoomCount;
-        if(bundleEnabled!=codeEnabled)throw new IOException("ZOOM_PATCH_CHANGED：地图缩放代码与资源状态不一致，请重新校验");
+        if(bundleEnabled!=codeEnabled)throw new IOException("ZOOM_PATCH_CHANGED：地图缩放代码与资源状态不一致，请重新打开修改器");
         return bundleEnabled;
     }
     private void RefreshZoomState() {
@@ -122,13 +122,13 @@ public sealed partial class RuntimeTravelService {
             ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2";
         } catch(Exception ex) {
             ZoomReady=false;ZoomEnabled=false;
-            ZoomStatus="地图缩放状态已变化 · 请重新校验";
+            ZoomStatus="地图缩放状态已变化 · 请重新打开修改器";
             Log("地图缩放读取失败："+ex.Message);
         }
     }
     public void ToggleZoom(bool enable) {
         // 同时切换第五档数值和相机档位数量，完整回读通过后才确认成功
-        if(!ZoomReady || zoomAddress==0)throw new IOException("ZOOM_NOT_FOUND：请重新校验地图缩放数据");
+        if(!ZoomReady || zoomAddress==0)throw new IOException("ZOOM_NOT_FOUND：请重新打开修改器");
         bool current=ReadZoomState();
         if(current==enable) {
             ZoomEnabled=current;

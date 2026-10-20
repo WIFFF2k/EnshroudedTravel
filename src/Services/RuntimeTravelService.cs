@@ -52,7 +52,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Running=true;
             if(ownsChange && SessionEnded()) { Toggle(false); Log("离开世界，已关闭传送"); }
             try { Enabled=ReadState(); Ready=true; }
-            catch { Ready=false; Status="目标数据已变化 · 请重新校验"; throw; }
+            catch { Ready=false; Status="目标数据已变化 · 请查看记录"; throw; }
             RefreshShroudTravelState();
             Status=Enabled?"已启用 · 多类目标可传送":"已关闭 · 可直接启用";
             return;
@@ -79,7 +79,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Status="正在定位传送数据"; Log("正在定位传送数据");
             var watch=Stopwatch.StartNew();
             address=FindRegistry(cancel);
-            if(address==0) throw new IOException("REGISTRY_MISSING：尚未找到传送数据，进入世界后点击重新校验");
+            if(address==0) throw new IOException("REGISTRY_MISSING：尚未找到传送数据，进入世界后点击启用全部");
             Enabled=ReadState(); ownsChange=false; Ready=true;
             RefreshZoomState();
             RefreshShroudTravelState();
@@ -94,7 +94,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             else if(!string.IsNullOrEmpty(ShroudTravelStatus))Log(ShroudTravelStatus);
         } catch(OperationCanceledException) {
             if(!ownsChange)ReleaseExited();
-            Ready=false;Status="定位已取消 · 点击重新校验重试";throw;
+            Ready=false;Status="定位已取消 · 正在等待自动重试";throw;
         } catch {
             if(!ownsChange) ReleaseExited();
             Ready=false; Status="连接未完成 · 请查看记录"; throw;
@@ -175,7 +175,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         Report("扫描完成，正在核验定位结果",done,total,unreadable,elapsed.Elapsed.TotalSeconds,false);
         if(found!=0)File.WriteAllLines(cache,new[]{TravelService.ExeHash,process.Id.ToString(),process.StartTime.ToUniversalTime().Ticks.ToString(),found.ToString("X")});
         if(zoomAddress!=0)WriteZoomCache();
-        else if(!zoomConflict)ZoomStatus="尚未找到地图缩放 · 打开地图后点击重新校验";
+        else if(!zoomConflict)ZoomStatus="尚未找到地图缩放 · 打开地图后重新打开修改器";
         return found;
     }
     private void Report(string message,long done=0,long total=0,long unreadable=0,double seconds=0,bool scanning=false) {

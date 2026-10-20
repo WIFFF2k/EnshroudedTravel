@@ -41,7 +41,7 @@ public sealed partial class RuntimeTravelService {
     }
     public void ToggleShroudTravel(bool enable) {
         // 仅切换快速传送禁用判断的通用分支，保留落水和下落限制
-        if(!ShroudTravelReady)throw new IOException("SHROUD_CODE_NOT_FOUND：请重新校验瘴气传送限制");
+        if(!ShroudTravelReady)throw new IOException("SHROUD_CODE_NOT_FOUND：请重新打开修改器");
         bool current=ReadShroudTravelState();
         if(current==enable) {
             ShroudTravelEnabled=current;

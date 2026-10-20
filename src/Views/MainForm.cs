@@ -1,14 +1,21 @@
 using System;
 using System.Drawing;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Windows.Forms;
 namespace EnshroudedTravel {
 public sealed class MainForm : Form {
+    private static readonly Color ButtonBackColor = Color.FromArgb(49,61,77);
+    private static readonly Color ButtonActiveBackColor = Color.FromArgb(21,103,91);
+    private static readonly Color ButtonTextColor = Color.FromArgb(230,233,239);
+    private static readonly Color ButtonBorderColor = Color.FromArgb(83,97,114);
     private readonly TravelService service;
     private readonly RuntimeTravelService runtime;
     private readonly Label connection = new Label(), backup = new Label();
-    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), refresh = new Button();
+    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button();
+    private readonly List<FeatureSwitch> featureSwitches = new List<FeatureSwitch>();
     private readonly TextBox log = new TextBox();
     private readonly Label location = new Label();
     private readonly ProgressBar progress = new ProgressBar();
@@ -35,10 +42,10 @@ public sealed class MainForm : Form {
         // 四个按钮列保持固定宽度，完整使用操作区宽度
         for(int i=0;i<4;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
         for(int i=0;i<2;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        var buttons=new[]{save,refresh,enable,zoom,shroud,storage};
-        var cells=new[]{0,0,1,0,0,1,1,1,2,1,3,1};
-        for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); b.FlatStyle=FlatStyle.Flat; b.BackColor=Color.FromArgb(49,61,77); b.ForeColor=ForeColor; actions.Controls.Add(b,cells[i*2],cells[i*2+1]);}
-        enable.Text="启用传送"; enable.BackColor=Color.FromArgb(21,103,91); save.Text="备份存档"; refresh.Text="校验状态"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送"; storage.Text="免费增大箱子";
+        var buttons=new[]{enableAll,save,enable,zoom,shroud,storage};
+        var cells=new[]{0,0,3,0,0,1,1,1,2,1,3,1};
+        for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); ApplyButtonStyle(b,false); actions.Controls.Add(b,cells[i*2],cells[i*2+1]);}
+        enable.Text="启用传送"; save.Text="备份存档"; enableAll.Text="启用全部"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送"; storage.Text="免费增大箱子";
         layout.Controls.Add(actions,0,3);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
         location.Dock=DockStyle.Fill;location.TextAlign=ContentAlignment.MiddleLeft;location.AutoEllipsis=true;location.Text="等待游戏启动后自动寻找传送数据";
@@ -46,13 +53,17 @@ public sealed class MainForm : Form {
         var searchRow=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};
         searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,120));
         progress.Dock=DockStyle.Fill;progress.Margin=new Padding(0,5,12,5);progress.Maximum=1000;
-        cancel.Text="取消定位";cancel.Dock=DockStyle.Fill;cancel.FlatStyle=FlatStyle.Flat;cancel.BackColor=refresh.BackColor;cancel.Enabled=false;
+        cancel.Text="取消定位";cancel.Dock=DockStyle.Fill;ApplyButtonStyle(cancel,false);cancel.Enabled=false;
         cancel.Click+=delegate {cancellation.Cancel();cancel.Enabled=false;location.Text="正在取消，当前读取结束后停止";};
         searchRow.Controls.Add(progress,0,0);searchRow.Controls.Add(cancel,1,0);layout.Controls.Add(searchRow,0,5);
         layout.Controls.Add(log,0,6);
         layout.Controls.Add(new Label {Text="适配：Build 25988036 · 仅修改内存 · 正常关闭助手时恢复",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,7); Controls.Add(layout);
         service.Log=AddLog; runtime.Log=AddLog;
         runtime.Progress=new Progress<LocationProgress>(ShowProgress);
+        RegisterFeature("传送", delegate {return runtime.Enabled||runtime.NeedsRestore;}, delegate {return runtime.Ready;}, delegate {runtime.Toggle(true);});
+        RegisterFeature("更小缩放", delegate {return runtime.ZoomEnabled;}, delegate {return runtime.ZoomReady;}, delegate {runtime.ToggleZoom(true);});
+        RegisterFeature("瘴气传送", delegate {return runtime.ShroudTravelEnabled;}, delegate {return runtime.ShroudTravelReady;}, delegate {runtime.ToggleShroudTravel(true);});
+        RegisterFeature("免费增大箱子", delegate {return runtime.StorageUpgradeEnabled;}, delegate {return runtime.Ready;}, delegate {runtime.ToggleStorageUpgrade(true);});
         enable.Click+=async delegate {
             bool turnOn=!(runtime.Enabled||runtime.NeedsRestore);
             await Run(delegate {runtime.Toggle(turnOn);},turnOn?"正在启用传送":"正在关闭传送");
@@ -69,8 +80,18 @@ public sealed class MainForm : Form {
             bool turnOn=!runtime.StorageUpgradeEnabled;
             await Run(delegate {runtime.ToggleStorageUpgrade(turnOn);},turnOn?"正在启用免费箱子升级":"正在关闭免费箱子升级");
         };
-        save.Click+=async delegate {await Run(delegate {service.BackupSaves();},"正在备份存档");};
-        refresh.Click+=async delegate {await Run(delegate {runtime.Poll(true,cancellation.Token);},"正在重新校验");};
+        save.Click+=async delegate {
+            if(runtime.Running) {
+                AddLog("备份存档已禁用：请先正常退出游戏，完全关闭后再备份");
+                return;
+            }
+            if(busy) {
+                AddLog("正在执行其他操作，请稍后再备份存档");
+                return;
+            }
+            await Run(delegate {service.BackupSaves();},"正在备份存档");
+        };
+        enableAll.Click+=async delegate {await Run(EnableAllFeatures,"正在启用全部功能");};
         Shown+=async delegate {await Run(delegate {runtime.Poll(true,cancellation.Token);},"正在连接与定位"); if(!closing&&!IsDisposed)timer.Start();};
         timer.Interval=1000; timer.Tick+=async delegate {await Run(delegate {runtime.Poll(false,cancellation.Token);},"正在检查连接");};
         FormClosing+=async delegate(object sender,FormClosingEventArgs e) {
@@ -127,23 +148,75 @@ public sealed class MainForm : Form {
         // 仅精简连接展示，不改变服务状态
         return value.Replace(" · 支持运行中切换","");
     }
+    private void RegisterFeature(string name,Func<bool> enabled,Func<bool> ready,Action enable) {
+        // 注册可由“启用全部”统一开启的功能
+        featureSwitches.Add(new FeatureSwitch(name,enabled,ready,enable));
+    }
+    private void EnableAllFeatures() {
+        // 依次启用所有已注册但尚未开启的功能
+        if(!runtime.Ready)runtime.Poll(true,cancellation.Token);
+        if(!runtime.Ready)throw new IOException("GAME_NOT_READY：请进入游戏世界后点击启用全部");
+        var errors=new List<Exception>();
+        int changed=0;
+        foreach(var feature in featureSwitches) {
+            if(feature.Enabled())continue;
+            if(!feature.Ready()) {
+                var error=new IOException(feature.Name+"尚未就绪");
+                errors.Add(error);AddLog(error.Message);continue;
+            }
+            try {feature.Enable();changed++;}
+            catch(Exception ex) {
+                var error=new IOException(feature.Name+"启用失败："+ex.Message,ex);
+                errors.Add(error);AddLog(error.Message);
+            }
+        }
+        if(errors.Count==0) {
+            AddLog(changed==0?"全部功能已经启用":"已启用全部功能");
+            return;
+        }
+        if(errors.Count==1)throw errors[0];
+        throw new AggregateException("ENABLE_ALL：部分功能启用失败",errors);
+    }
+    private sealed class FeatureSwitch {
+        public readonly string Name;
+        public readonly Func<bool> Enabled;
+        public readonly Func<bool> Ready;
+        public readonly Action Enable;
+        public FeatureSwitch(string name,Func<bool> enabled,Func<bool> ready,Action enable) {
+            Name=name;Enabled=enabled;Ready=ready;Enable=enable;
+        }
+    }
+    private static void ApplyButtonStyle(Button button,bool active) {
+        // 统一所有按钮的底色、文字、边框和交互状态
+        Color background=active?ButtonActiveBackColor:ButtonBackColor;
+        button.FlatStyle=FlatStyle.Flat;
+        button.UseVisualStyleBackColor=false;
+        button.BackColor=background;
+        button.ForeColor=ButtonTextColor;
+        button.TextAlign=ContentAlignment.MiddleCenter;
+        button.FlatAppearance.BorderColor=ButtonBorderColor;
+        button.FlatAppearance.BorderSize=1;
+        button.FlatAppearance.MouseOverBackColor=ControlPaint.Light(background,0.12f);
+        button.FlatAppearance.MouseDownBackColor=ControlPaint.Dark(background,0.12f);
+    }
     private void UpdateState() {
         // 游戏运行时允许内存开关，完整存档备份仍要求退出
         connection.Text=ConnectionText(runtime.Connection);
         backup.Text="最近备份："+service.LastBackup;
         bool canClose=runtime.Enabled||runtime.NeedsRestore;
         enable.Text=canClose?"关闭传送":"启用传送";
+        ApplyButtonStyle(enable,canClose);
         enable.Enabled=!busy&&!closing&&(runtime.Ready||canClose);
         zoom.Text=runtime.ZoomEnabled?"关闭更小缩放":"开启更小缩放";
-        zoom.BackColor=runtime.ZoomEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
+        ApplyButtonStyle(zoom,runtime.ZoomEnabled);
         zoom.Enabled=!busy&&!closing&&runtime.ZoomReady;
         shroud.Text=runtime.ShroudTravelEnabled?"恢复瘴气限制":"允许瘴气中传送";
-        shroud.BackColor=runtime.ShroudTravelEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
+        ApplyButtonStyle(shroud,runtime.ShroudTravelEnabled);
         shroud.Enabled=!busy&&!closing&&(runtime.ShroudTravelReady||runtime.ShroudTravelNeedsRestore);
         storage.Text=runtime.StorageUpgradeEnabled?"关闭免费箱子升级":"免费增大箱子";
-        storage.BackColor=runtime.StorageUpgradeEnabled?Color.FromArgb(21,103,91):Color.FromArgb(49,61,77);
+        ApplyButtonStyle(storage,runtime.StorageUpgradeEnabled);
         storage.Enabled=!busy&&!closing&&(runtime.Ready||runtime.StorageUpgradeNeedsRestore);
-        save.Enabled=!busy&&!closing&&!runtime.Running;refresh.Enabled=!busy&&!closing;
+        save.Enabled=!closing;enableAll.Enabled=!busy&&!closing;
     }
 }
 }
