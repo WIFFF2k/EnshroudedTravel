@@ -4,6 +4,7 @@
 
 - Views/MainForm：自动连接、真实定位进度、取消、重试和运行中传送开关
 - Services/RuntimeTravelService：版本校验、完整注册表搜索、同进程缓存、单字节写入及恢复
+- Services/RuntimeTravelService.TravelMarkers：多类地图标记 ID、传送字段偏移和状态匹配
 - Services/RuntimeTravelService.Zoom：地图缩放资源定位、最远档位切换及恢复
 - Services/TravelService：原版资源校验和存档备份，历史磁盘补丁方法不再由主界面调用
 
@@ -14,7 +15,7 @@
 
 主窗体为「雾锁王国修改器」，固定尺寸并始终保留进度区域
 第一行：备份存档、校验状态；第二行：启用/关闭传送、开启更小缩放
-传送按钮调用 Toggle(true/false)
+传送按钮调用 Toggle(true/false)，切换灵火神殿、宝石锻炉、远古尖塔和地点标记
 缩放按钮调用 ToggleZoom(true/false)，将地图相机从原生四档扩展为五档
 原生档位为 16/8/4/2，开启后第五档为 0.5
 关闭时先恢复四档限制，再把第五档恢复为原生 0.7

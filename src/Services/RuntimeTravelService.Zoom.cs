@@ -156,20 +156,6 @@ public sealed partial class RuntimeTravelService {
             Log(enable?"已开启更小缩放，地图缩放档位为 16/8/4/2/0.5":"已关闭更小缩放，地图缩放档位已恢复");
         } finally {Native.CloseHandle(writer);}
     }
-    private static void WriteProtected(IntPtr writer,long location,byte[] value,uint protection) {
-        // 临时修改目标页权限后完整写入，并在任何结果下恢复原权限
-        uint old;
-        IntPtr target=new IntPtr(location);
-        if(!Native.VirtualProtectEx(writer,target,(UIntPtr)value.Length,protection,out old))throw Native.Error("PAGE_ACCESS：无法修改地图缩放页权限");
-        try {
-            UIntPtr written;
-            if(!Native.WriteProcessMemory(writer,target,value,(UIntPtr)value.Length,out written) || written.ToUInt64()!=(ulong)value.Length)
-                throw Native.Error("WRITE_FAILED：地图缩放写入失败");
-        } finally {
-            uint ignored;
-            if(!Native.VirtualProtectEx(writer,target,(UIntPtr)value.Length,old,out ignored))throw Native.Error("PROTECTION_RESTORE：恢复地图缩放页权限失败");
-        }
-    }
     private void WriteZoomCache() {
         // 缓存绑定版本、进程和启动时间，新游戏进程不会沿用旧地址
         string cache=Path.Combine(files.Root,"runtime-zoom-location.txt");

@@ -15,10 +15,10 @@ public sealed class LocationProgress {
     public bool Scanning;
 }
 public sealed partial class RuntimeTravelService : IDisposable {
-    private const int FlagOffset = 1956;
     private const string RegistryHash = "da6cb531da4c25df7f0bb03ee316018b9cf5356afa09220f3fcce6032c9c7a53";
     private readonly TravelService files;
     private readonly byte[] original;
+    private readonly int[] travelOffsets;
     private Process process;
     private IntPtr handle;
     private long address, logPosition;
@@ -40,6 +40,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         string path=Path.Combine(files.Root,"payload","registry-original.bin");
         if(TravelService.HashFile(path)!=RegistryHash) throw new IOException("TEMPLATE_INVALID：定位模板校验失败");
         original=File.ReadAllBytes(path);
+        travelOffsets=BuildTravelOffsets(original);
         zoomTemplate=LoadZoomTemplate(files.Root);
         Connection="未连接 · 等待游戏启动"; Status="等待游戏启动";
     }
@@ -51,7 +52,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             if(ownsChange && SessionEnded()) { Toggle(false); Log("离开世界，已关闭传送"); }
             try { Enabled=ReadState(); Ready=true; }
             catch { Ready=false; Status="目标数据已变化 · 请重新校验"; throw; }
-            Status=Enabled?"已启用 · 无需重启":"已关闭 · 可直接启用";
+            Status=Enabled?"已启用 · 多类地点可传送":"已关闭 · 可直接启用";
             return;
         }
         ReleaseExited();
@@ -81,8 +82,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
             RefreshZoomState();
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
-            Status=Enabled?"已启用 · 可关闭恢复":"已关闭 · 可直接启用";
+            Status=Enabled?"已启用 · 多类地点传送":"已关闭 · 可直接启用";
             Log("已核验完整注册表，定位耗时 "+watch.Elapsed.TotalSeconds.ToString("0.00")+" 秒");
+            Log("已加载 "+travelOffsets.Length+" 类地点传送配置");
             if(ZoomReady)Log("已定位地图缩放数据，可扩展为五档缩放");
             else if(!string.IsNullOrEmpty(ZoomStatus))Log(ZoomStatus);
         } catch(OperationCanceledException) {
@@ -103,7 +105,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             string[] fields=File.ReadAllLines(cache);long cached,start;int pid;
             if(fields.Length==4 && fields[0]==TravelService.ExeHash && int.TryParse(fields[1],out pid) && long.TryParse(fields[2],out start) && long.TryParse(fields[3],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out cached) && cached>0 && pid==process.Id && start==process.StartTime.ToUniversalTime().Ticks) {
                 byte[] existing=ReadAt(cached);
-                if(existing!=null && Matches(existing)){
+                if(existing!=null && MatchesKnownTravelState(existing)){
                     found=cached;
                     Log("本次游戏传送地址复核通过");
                     if(zoomAddress!=0){Log("本次游戏地图缩放地址复核通过");return cached;}
@@ -146,7 +148,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                             int j=width-1;while(j>=0 && buffer[i+j]==pattern[j])j--;
                             if(j<0 && pos+i>=anchor) {
                                 long candidate=pos+i-anchor;byte[] data=ReadAt(candidate);
-                                if(data!=null && Matches(data)) {
+                                if(data!=null && MatchesKnownTravelState(data)) {
                                     if(found!=0 && found!=candidate)throw new IOException("REGISTRY_AMBIGUOUS：发现多个注册表，未修改内存");
                                     found=candidate;
                                 }
@@ -184,42 +186,48 @@ public sealed partial class RuntimeTravelService : IDisposable {
         byte[] data=new byte[length]; UIntPtr read;
         return Native.ReadProcessMemory(handle,new IntPtr(location),data,(UIntPtr)data.Length,out read) && read.ToUInt64()==(ulong)data.Length?data:null;
     }
-    private bool Matches(byte[] data) {
-        // 只允许已验证目标开关在零与一之间变化
-        if(data.Length!=original.Length || data[FlagOffset]>1)return false;
-        for(int i=0;i<data.Length;i++)if(i!=FlagOffset && data[i]!=original[i])return false;
-        return true;
+    private static void WriteProtected(IntPtr writer,long location,byte[] value,uint protection) {
+        // 临时修改目标页权限后完整写入，并在任何结果下恢复原权限
+        uint old;
+        IntPtr target=new IntPtr(location);
+        if(!Native.VirtualProtectEx(writer,target,(UIntPtr)value.Length,protection,out old))throw Native.Error("PAGE_ACCESS：无法修改目标页权限");
+        try {
+            UIntPtr written;
+            if(!Native.WriteProcessMemory(writer,target,value,(UIntPtr)value.Length,out written) || written.ToUInt64()!=(ulong)value.Length)
+                throw Native.Error("WRITE_FAILED：目标页写入失败");
+        } finally {
+            uint ignored;
+            if(!Native.VirtualProtectEx(writer,target,(UIntPtr)value.Length,old,out ignored))throw Native.Error("PROTECTION_RESTORE：恢复目标页权限失败");
+        }
     }
     private bool ReadState() {
-        // 每次点击和状态轮询都重新检查目标数据
+        // 每次点击和状态轮询都重新检查全部目标标记
         if(process==null || process.HasExited) throw new IOException("GAME_EXITED：游戏已退出");
         byte[] data=ReadAt(address);
-        if(data==null || !Matches(data))throw new IOException("REGISTRY_CHANGED：目标数据已变化，未继续写入");
-        return data[FlagOffset]==1;
+        if(data==null)throw new IOException("REGISTRY_CHANGED：目标数据已变化，未继续写入");
+        if(MatchesTravelState(data,true))return true;
+        if(MatchesTravelState(data,false))return false;
+        throw new IOException("REGISTRY_CHANGED：目标数据已变化，未继续写入");
     }
     public void Toggle(bool enable) {
-        // 临时授予目标页写权限，仅写一个字节并核验恢复权限
+        // 逐项切换目标标记的传送字段，并核验完整注册表
         bool current=ReadState();
         if(current==enable) { Enabled=current; if(!enable)ownsChange=false; return; }
         IntPtr writer=Native.OpenProcess(0x438,false,process.Id);
         if(writer==IntPtr.Zero)throw Native.Error("WRITE_ACCESS：无法修改游戏内存");
         try {
             if(process.HasExited || ReadState()!=current)throw new IOException("PROCESS_CHANGED：操作前游戏状态已变化");
-            uint old; IntPtr target=new IntPtr(address+FlagOffset);
-            if(!Native.VirtualProtectEx(writer,target,(UIntPtr)1,4,out old))throw Native.Error("PAGE_ACCESS：无法修改目标页权限");
-            try {
-                ownsChange=true; UIntPtr written;
-                if(!Native.WriteProcessMemory(writer,target,new[]{(byte)(enable?1:0)},(UIntPtr)1,out written)||written.ToUInt64()!=1)throw Native.Error("WRITE_FAILED：开关写入失败");
-            } finally {
-                uint ignored;
-                if(!Native.VirtualProtectEx(writer,target,(UIntPtr)1,old,out ignored))throw Native.Error("PROTECTION_RESTORE：恢复目标页权限失败");
+            ownsChange=true;
+            foreach(int offset in travelOffsets) {
+                byte value=enable?(byte)1:original[offset];
+                WriteProtected(writer,address+offset,new[]{value},4);
             }
             Enabled=ReadState();
             if(Enabled!=enable)throw new IOException("VERIFY_FAILED：开关回读不一致");
             ownsChange=Enabled; Ready=true;
-            Status=Enabled?"已启用 · 无需重启":"已关闭 · 已恢复";
+            Status=Enabled?"已启用 · 多类地点传送":"已关闭 · 已恢复";
             if(enable)ResetLog();
-            Log(enable?"已启用，重新打开地图即可测试":"已关闭，完整注册表已恢复");
+            Log(enable?"已启用灵火神殿、宝石锻炉、远古尖塔和地点传送":"已关闭，完整注册表已恢复");
         } finally { Native.CloseHandle(writer); }
     }
     private void ResetLog() {
