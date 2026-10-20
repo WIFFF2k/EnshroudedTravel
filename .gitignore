@@ -1,0 +1,42 @@
+# 本机存档、资源备份及运行时缓存
+/backups/
+/runtime-*.txt
+/operation.pending
+/config.local.json
+
+# 编译产物和本机工具
+*.exe
+*.dll
+*.pdb
+*.obj
+*.pyc
+__pycache__/
+
+# 游戏资源和提取结果，保留本机文件供现有程序使用
+/payload/*.bin
+/payload/*.patch
+/lab/game/
+/lab/zoom-export/
+/lab/build/
+/lab/analysis-deps/
+/lab/save-tools-deps/
+/lab/hot-trial-*/
+/lab/import-*/
+/lab/test-*/
+/lab/verify/
+/lab/*.bin
+/lab/*.log
+/lab/map-markers-original.txt
+
+# 原始日志、截图和机器相关分析结果，保留经过整理的说明文档
+/reports/*
+!/reports/*.md
+
+# 本地环境和凭据文件
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 忽略规则不会移除已经跟踪的文件，也不会清除历史记录
