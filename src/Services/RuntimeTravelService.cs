@@ -53,7 +53,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             try { Enabled=ReadState(); Ready=true; }
             catch { Ready=false; Status="目标数据已变化 · 请重新校验"; throw; }
             RefreshShroudTravelState();
-            Status=Enabled?"已启用 · 多类地点可传送":"已关闭 · 可直接启用";
+            Status=Enabled?"已启用 · 多类目标可传送":"已关闭 · 可直接启用";
             return;
         }
         ReleaseExited();
@@ -84,9 +84,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
             RefreshShroudTravelState();
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
-            Status=Enabled?"已启用 · 多类地点传送":"已关闭 · 可直接启用";
+            Status=Enabled?"已启用 · 多类目标传送":"已关闭 · 可直接启用";
             Log("已核验完整注册表，定位耗时 "+watch.Elapsed.TotalSeconds.ToString("0.00")+" 秒");
-            Log("已加载 "+travelOffsets.Length+" 类地点传送配置");
+            Log("已加载 "+travelOffsets.Length+" 类地图传送目标");
             if(ZoomReady)Log("已定位地图缩放数据，可扩展为五档缩放");
             else if(!string.IsNullOrEmpty(ZoomStatus))Log(ZoomStatus);
             if(ShroudTravelReady)Log("已定位瘴气传送限制");
@@ -229,9 +229,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Enabled=ReadState();
             if(Enabled!=enable)throw new IOException("VERIFY_FAILED：开关回读不一致");
             ownsChange=Enabled; Ready=true;
-            Status=Enabled?"已启用 · 多类地点传送":"已关闭 · 已恢复";
+            Status=Enabled?"已启用 · 多类目标传送":"已关闭 · 已恢复";
             if(enable)ResetLog();
-            Log(enable?"已启用灵火神殿、宝石锻炉、远古尖塔和地点传送":"已关闭，完整注册表已恢复");
+            Log(enable?"已启用灵火神殿、宝石锻炉、远古尖塔、地点和任务感叹号传送":"已关闭，完整注册表已恢复");
         } finally { Native.CloseHandle(writer); }
     }
     private void ResetLog() {
