@@ -17,6 +17,9 @@ public sealed partial class RuntimeTravelService {
         435960, 436008, 436056, 436104, 436152,
         436260, 436308, 436356, 436404, 436452
     };
+    private static readonly int[] StorageRecipeKnowledgeOffsets = {
+        8472, 8640, 8808, 8976, 9144, 9312, 9480
+    };
     private readonly byte[] storageRecipeTemplate;
     private long storageRecipeAddress;
     private bool storageRecipeConflict, ownsStorageUpgradeChange;
@@ -36,6 +39,10 @@ public sealed partial class RuntimeTravelService {
             if(offset<0 || offset+4>data.Length || BitConverter.ToUInt32(data,offset)==0)
                 throw new IOException("STORAGE_TEMPLATE_INVALID：箱子升级配方材料数量不符");
         }
+        foreach(int offset in StorageRecipeKnowledgeOffsets) {
+            if(offset<0 || offset+12>data.Length || BitConverter.ToUInt32(data,offset)==0)
+                throw new IOException("STORAGE_TEMPLATE_INVALID：箱子升级配方等级条件不符");
+        }
         return data;
     }
     private byte[] BuildStorageRecipeAnchor() {
@@ -45,10 +52,11 @@ public sealed partial class RuntimeTravelService {
         return anchor;
     }
     private bool MatchesStorageRecipeState(byte[] data,bool enabled) {
-        // 只允许目标材料数量在原值和零值之间切换
+        // 只允许目标材料数量和等级查询在原值与零值之间切换
         if(data==null || data.Length!=storageRecipeTemplate.Length)return false;
         for(int i=0;i<data.Length;i++) {
             if(Array.IndexOf(StorageRecipeCountOffsets,i)>=0)continue;
+            if(IsStorageRecipeKnowledgeByte(i))continue;
             if(data[i]!=storageRecipeTemplate[i])return false;
         }
         foreach(int offset in StorageRecipeCountOffsets) {
@@ -56,7 +64,22 @@ public sealed partial class RuntimeTravelService {
             uint expected=enabled?0:BitConverter.ToUInt32(storageRecipeTemplate,offset);
             if(value!=expected)return false;
         }
+        foreach(int offset in StorageRecipeKnowledgeOffsets) {
+            bool allZero=true,original=true;
+            for(int i=0;i<12;i++) {
+                if(data[offset+i]!=0)allZero=false;
+                if(data[offset+i]!=storageRecipeTemplate[offset+i])original=false;
+            }
+            if(enabled?!allZero:!original)return false;
+        }
         return true;
+    }
+    private static bool IsStorageRecipeKnowledgeByte(int index) {
+        // 判断当前字节是否属于箱子升级配方的等级查询
+        foreach(int offset in StorageRecipeKnowledgeOffsets) {
+            if(index>=offset && index<offset+12)return true;
+        }
+        return false;
     }
     private bool ValidateStorageRecipeRegistry(long location) {
         // 完整核验单个箱子升级配方注册表，排除其他相似资源
@@ -64,7 +87,7 @@ public sealed partial class RuntimeTravelService {
         return MatchesStorageRecipeState(data,false) || MatchesStorageRecipeState(data,true);
     }
     private bool ReadStorageUpgradeState() {
-        // 读取配方锚点和目标材料数量，确认当前开关状态
+        // 读取配方锚点、材料数量和等级查询，确认当前开关状态
         if(storageRecipeAddress==0)throw new IOException("STORAGE_NOT_FOUND：箱子升级配方尚未定位");
         if(process==null || process.HasExited)throw new IOException("GAME_EXITED：游戏已退出");
         byte[] anchor=ReadAt(storageRecipeAddress+StorageRecipeAnchorOffset,StorageRecipeAnchorLength);
@@ -86,6 +109,21 @@ public sealed partial class RuntimeTravelService {
                 throw new IOException("STORAGE_STATE_CHANGED：箱子升级配方状态不一致");
             state=current;
         }
+        foreach(int offset in StorageRecipeKnowledgeOffsets) {
+            byte[] raw=ReadAt(storageRecipeAddress+offset,12);
+            if(raw==null)throw new IOException("STORAGE_CHANGED：箱子升级配方已变化");
+            bool allZero=true,original=true;
+            for(int i=0;i<12;i++) {
+                if(raw[i]!=0)allZero=false;
+                if(raw[i]!=storageRecipeTemplate[offset+i])original=false;
+            }
+            if(!allZero && !original)
+                throw new IOException("STORAGE_LEVEL_CHANGED：箱子升级等级条件已变化");
+            bool current=allZero;
+            if(state.HasValue && state.Value!=current)
+                throw new IOException("STORAGE_STATE_CHANGED：箱子升级配方状态不一致");
+            state=current;
+        }
         return state.HasValue && state.Value;
     }
     private void RefreshStorageUpgradeState() {
@@ -93,7 +131,7 @@ public sealed partial class RuntimeTravelService {
         if(storageRecipeAddress==0)return;
         try {
             StorageUpgradeEnabled=ReadStorageUpgradeState();StorageUpgradeReady=true;
-            StorageUpgradeStatus=StorageUpgradeEnabled?"已启用 · 增大箱子不消耗材料":"已关闭 · 增大箱子恢复材料要求";
+            StorageUpgradeStatus=StorageUpgradeEnabled?"已启用 · 增大箱子无材料与等级限制":"已关闭 · 增大箱子恢复材料与等级要求";
         } catch(Exception ex) {
             StorageUpgradeReady=false;StorageUpgradeEnabled=false;
             StorageUpgradeStatus="箱子升级配方状态已变化 · 请重新定位";
@@ -165,7 +203,7 @@ public sealed partial class RuntimeTravelService {
         StorageUpgradeReady=true;
     }
     public void ToggleStorageUpgrade(bool enable) {
-        // 只切换箱子容量升级配方的材料数量，不修改附魔和普通制作
+        // 只切换箱子容量升级配方的材料数量和等级条件，不修改附魔和普通制作
         LocateStorageUpgrade();
         bool current=ReadStorageUpgradeState();
         if(current==enable) {
@@ -183,11 +221,16 @@ public sealed partial class RuntimeTravelService {
                 uint value=enable?0:BitConverter.ToUInt32(storageRecipeTemplate,offset);
                 WriteProtected(writer,storageRecipeAddress+offset,BitConverter.GetBytes(value),4);
             }
+            foreach(int offset in StorageRecipeKnowledgeOffsets) {
+                byte[] value=new byte[12];
+                if(!enable)Buffer.BlockCopy(storageRecipeTemplate,offset,value,0,value.Length);
+                WriteProtected(writer,storageRecipeAddress+offset,value,4);
+            }
             StorageUpgradeEnabled=ReadStorageUpgradeState();StorageUpgradeReady=true;
             if(StorageUpgradeEnabled!=enable)throw new IOException("VERIFY_FAILED：箱子升级状态回读不一致");
             ownsStorageUpgradeChange=StorageUpgradeEnabled;
-            StorageUpgradeStatus=StorageUpgradeEnabled?"已启用 · 增大箱子不消耗材料":"已关闭 · 增大箱子恢复材料要求";
-            Log(enable?"已启用免费增大箱子，箱子容量升级不再消耗材料":"已关闭免费增大箱子，材料要求已恢复");
+            StorageUpgradeStatus=StorageUpgradeEnabled?"已启用 · 增大箱子无材料与等级限制":"已关闭 · 增大箱子恢复材料与等级要求";
+            Log(enable?"已启用免费增大箱子，容量升级不再消耗材料或受等级限制":"已关闭免费增大箱子，材料和等级要求已恢复");
         } finally {Native.CloseHandle(writer);}
     }
     private void ReleaseStorageUpgrade() {
