@@ -113,7 +113,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                 if(existing!=null && MatchesKnownTravelState(existing)){
                     found=cached;
                     Log("本次游戏传送地址复核通过");
-                    if(zoomAddress!=0){Log("本次游戏地图缩放地址复核通过");return cached;}
+                    if(zoomAddresses.Count!=0){Log("本次游戏地图缩放地址复核通过");return cached;}
                     Log("传送缓存已复用，继续定位地图缩放数据");
                 }
             }
@@ -126,7 +126,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         byte[] zoomAnchor=BuildZoomAnchor();
         int[] zoomSkip=Enumerable.Repeat(zoomAnchor.Length,256).ToArray();
         for(int i=0;i<zoomAnchor.Length-1;i++)zoomSkip[zoomAnchor[i]]=zoomAnchor.Length-1-i;
-        bool searchZoom=zoomAddress==0;
+        bool searchZoom=zoomAddresses.Count==0;
         byte[] buffer=new byte[2*1024*1024]; long cursor=0;
         var regions=new List<Native.Region>();long total=0,done=0,unreadable=0;
         Report("正在统计可搜索的内存区域");
@@ -174,8 +174,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(unreadable>0)Log("扫描期间有 "+(unreadable/1048576.0).ToString("0.0")+" MB 内存变为不可读");
         Report("扫描完成，正在核验定位结果",done,total,unreadable,elapsed.Elapsed.TotalSeconds,false);
         if(found!=0)File.WriteAllLines(cache,new[]{TravelService.ExeHash,process.Id.ToString(),process.StartTime.ToUniversalTime().Ticks.ToString(),found.ToString("X")});
-        if(zoomAddress!=0)WriteZoomCache();
-        else if(!zoomConflict)ZoomStatus="尚未找到地图缩放 · 打开地图后重新打开修改器";
+        if(zoomAddresses.Count!=0){
+            WriteZoomCache();RefreshZoomState();
+        } else ZoomStatus="尚未找到地图缩放 · 打开地图后重新打开修改器";
         return found;
     }
     private void Report(string message,long done=0,long total=0,long unreadable=0,double seconds=0,bool scanning=false) {

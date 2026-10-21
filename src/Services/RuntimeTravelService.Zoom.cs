@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Globalization;
+using System.Collections.Generic;
 
 namespace EnshroudedTravel {
 public sealed partial class RuntimeTravelService {
@@ -13,9 +14,11 @@ public sealed partial class RuntimeTravelService {
     private const int OriginalZoomBits = 0x3F333333;
     private const int ReducedZoomBits = 0x3EE66666;
     private const string ZoomTemplateHash = "316d5476d609fe1e4e8c280733daf218a8cc3d8c6a2861717400417a79b694a8";
+    private const string ZoomCacheVersion = "zoom-v2";
     private readonly byte[] zoomTemplate;
-    private long zoomAddress, zoomCodeAddress;
-    private bool zoomConflict, ownsZoomChange;
+    private readonly List<long> zoomAddresses = new List<long>();
+    private long zoomCodeAddress;
+    private bool ownsZoomChange;
     public bool ZoomReady { get; private set; }
     public bool ZoomEnabled { get; private set; }
     public string ZoomStatus { get; private set; }
@@ -43,35 +46,44 @@ public sealed partial class RuntimeTravelService {
         string cache=Path.Combine(files.Root,"runtime-zoom-location.txt");
         if(!File.Exists(cache))return;
         string[] fields=File.ReadAllLines(cache);
-        long cached,start;int pid;
-        if(fields.Length!=4 || fields[0]!=TravelService.ExeHash || !int.TryParse(fields[1],out pid)
-            || !long.TryParse(fields[2],out start)
-            || !long.TryParse(fields[3],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out cached)
-            || cached<=0 || pid!=process.Id || start!=process.StartTime.ToUniversalTime().Ticks)return;
-        if(!ValidateZoomBundle(cached)){
+        long start;int pid,count;
+        if(fields.Length<5 || fields[0]!=ZoomCacheVersion || fields[1]!=TravelService.ExeHash
+            || !int.TryParse(fields[2],out pid) || !long.TryParse(fields[3],out start)
+            || !int.TryParse(fields[4],out count) || fields.Length!=5+count
+            || pid!=process.Id || start!=process.StartTime.ToUniversalTime().Ticks)return;
+        var candidates=new List<long>();
+        for(int i=0;i<count;i++) {
+            long cached;
+            if(!long.TryParse(fields[5+i],NumberStyles.HexNumber,CultureInfo.InvariantCulture,out cached)
+                || cached<=0 || candidates.Contains(cached)) {
+                ZoomStatus="地图缩放的旧位置已失效 · 正在重新定位";
+                return;
+            }
+            candidates.Add(cached);
+        }
+        foreach(long cached in candidates) {
+            if(!ValidateZoomBundle(cached)) {
+                ZoomStatus="地图缩放的旧位置已失效 · 正在重新定位";
+                return;
+            }
+        }
+        if(candidates.Count==0){
             ZoomStatus="地图缩放的旧位置已失效 · 正在重新定位";
             return;
         }
-        zoomAddress=cached;
+        zoomAddresses.Clear();zoomAddresses.AddRange(candidates);
         RefreshZoomState();
     }
     private void SearchZoomBuffer(byte[] buffer,int available,long bufferAddress,byte[] anchor,int[] skip) {
-        // 跳跃搜索唯一特征，再用完整资源排除其他相似数据
-        if(zoomConflict || available<anchor.Length)return;
+        // 跳跃搜索特征并收集全部完整匹配的地图缩放资源
+        if(available<anchor.Length)return;
         for(int i=0;i<=available-anchor.Length;) {
             int j=anchor.Length-1;
             while(j>=0 && buffer[i+j]==anchor[j])j--;
             if(j<0 && bufferAddress+i>=ZoomArrayOffset) {
                 long candidate=bufferAddress+i-ZoomArrayOffset;
                 if(ValidateZoomBundle(candidate)) {
-                    if(zoomAddress!=0 && zoomAddress!=candidate) {
-                        zoomConflict=true;ZoomReady=false;ZoomEnabled=false;zoomAddress=0;
-                        ZoomStatus="发现多份地图缩放配置 · 未修改游戏";
-                        Log(ZoomStatus);
-                        return;
-                    }
-                    zoomAddress=candidate;
-                    RefreshZoomState();
+                    if(!zoomAddresses.Contains(candidate))zoomAddresses.Add(candidate);
                 }
                 i+=anchor.Length;
             } else i+=skip[buffer[i+anchor.Length-1]];
@@ -95,31 +107,38 @@ public sealed partial class RuntimeTravelService {
     }
     private bool ReadZoomState() {
         // 每次操作前后都重新核验完整资源、第五档和相机档位限制
-        if(zoomAddress==0)throw new IOException("ZOOM_NOT_FOUND：地图缩放数据尚未定位");
+        if(zoomAddresses.Count==0)throw new IOException("ZOOM_NOT_FOUND：地图缩放数据尚未定位");
         EnsureZoomCodeAddress();
         if(zoomCodeAddress==0)throw new IOException("ZOOM_CODE_NOT_FOUND：地图缩放代码尚未定位");
-        byte[] data=ReadAt(zoomAddress,zoomTemplate.Length);
-        if(data==null || data.Length!=zoomTemplate.Length)throw new IOException("ZOOM_UNREADABLE：无法读取地图缩放数据");
-        int scale=BitConverter.ToInt32(data,ZoomScaleOffset);
-        if(scale!=OriginalZoomBits && scale!=ReducedZoomBits)throw new IOException("ZOOM_CHANGED：地图缩放数据已变化，未继续写入");
-        for(int i=0;i<data.Length;i++) {
-            if(i>=ZoomScaleOffset && i<ZoomScaleOffset+4)continue;
-            if(data[i]!=zoomTemplate[i])throw new IOException("ZOOM_CHANGED：地图缩放资源内容已变化，未继续写入");
+        bool? bundleEnabled=null;
+        foreach(long location in zoomAddresses) {
+            byte[] data=ReadAt(location,zoomTemplate.Length);
+            if(data==null || data.Length!=zoomTemplate.Length)throw new IOException("ZOOM_UNREADABLE：无法读取地图缩放数据");
+            int scale=BitConverter.ToInt32(data,ZoomScaleOffset);
+            if(scale!=OriginalZoomBits && scale!=ReducedZoomBits)throw new IOException("ZOOM_CHANGED：地图缩放数据已变化，未继续写入");
+            for(int i=0;i<data.Length;i++) {
+                if(i>=ZoomScaleOffset && i<ZoomScaleOffset+4)continue;
+                if(data[i]!=zoomTemplate[i])throw new IOException("ZOOM_CHANGED：地图缩放资源内容已变化，未继续写入");
+            }
+            bool current=scale==ReducedZoomBits;
+            if(bundleEnabled.HasValue && bundleEnabled.Value!=current)
+                throw new IOException("ZOOM_COPY_CHANGED：地图缩放副本状态不一致，未继续写入");
+            bundleEnabled=current;
         }
         byte[] code=ReadAt(zoomCodeAddress,1);
         if(code==null || (code[0]!=NativeZoomCount && code[0]!=ExtendedZoomCount))
             throw new IOException("ZOOM_CODE_CHANGED：地图缩放档位代码已变化，未继续写入");
-        bool bundleEnabled=scale==ReducedZoomBits;
         bool codeEnabled=code[0]==ExtendedZoomCount;
-        if(bundleEnabled!=codeEnabled)throw new IOException("ZOOM_PATCH_CHANGED：地图缩放代码与资源状态不一致，请重新打开修改器");
-        return bundleEnabled;
+        if(bundleEnabled.Value!=codeEnabled)throw new IOException("ZOOM_PATCH_CHANGED：地图缩放代码与资源状态不一致，请重新打开修改器");
+        return bundleEnabled.Value;
     }
     private void RefreshZoomState() {
         // 缩放状态独立刷新，不影响已经可用的传送定位
-        if(zoomAddress==0)return;
+        if(zoomAddresses.Count==0)return;
         try {
             ZoomEnabled=ReadZoomState();ZoomReady=true;
-            ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2";
+            ZoomStatus=(ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2")
+                +" · "+zoomAddresses.Count+" 份配置";
         } catch(Exception ex) {
             ZoomReady=false;ZoomEnabled=false;
             ZoomStatus="地图缩放状态已变化 · 请重新打开修改器";
@@ -128,7 +147,7 @@ public sealed partial class RuntimeTravelService {
     }
     public void ToggleZoom(bool enable) {
         // 同时切换第五档数值和相机档位数量，完整回读通过后才确认成功
-        if(!ZoomReady || zoomAddress==0)throw new IOException("ZOOM_NOT_FOUND：请重新打开修改器");
+        if(!ZoomReady || zoomAddresses.Count==0)throw new IOException("ZOOM_NOT_FOUND：请重新打开修改器");
         bool current=ReadZoomState();
         if(current==enable) {
             ZoomEnabled=current;
@@ -143,27 +162,38 @@ public sealed partial class RuntimeTravelService {
             if(zoomCodeAddress==0)throw new IOException("ZOOM_CODE_NOT_FOUND：地图缩放代码尚未定位");
             ownsZoomChange=true;
             if(enable) {
-                WriteProtected(writer,zoomAddress+ZoomScaleOffset,BitConverter.GetBytes(0.45f),4);
+                foreach(long location in zoomAddresses)
+                    WriteProtected(writer,location+ZoomScaleOffset,BitConverter.GetBytes(0.45f),4);
                 WriteProtected(writer,zoomCodeAddress,new[]{ExtendedZoomCount},0x40);
             } else {
                 WriteProtected(writer,zoomCodeAddress,new[]{NativeZoomCount},0x40);
-                WriteProtected(writer,zoomAddress+ZoomScaleOffset,BitConverter.GetBytes(0.7f),4);
+                foreach(long location in zoomAddresses)
+                    WriteProtected(writer,location+ZoomScaleOffset,BitConverter.GetBytes(0.7f),4);
             }
             ZoomEnabled=ReadZoomState();ZoomReady=true;
             if(ZoomEnabled!=enable)throw new IOException("VERIFY_FAILED：地图缩放状态回读不一致");
             ownsZoomChange=ZoomEnabled;
-            ZoomStatus=ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2";
+            ZoomStatus=(ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2")
+                +" · "+zoomAddresses.Count+" 份配置";
             Log(enable?"已开启更小缩放，地图缩放档位为 16/8/4/2/0.45":"已关闭更小缩放，地图缩放档位已恢复");
         } finally {Native.CloseHandle(writer);}
     }
     private void WriteZoomCache() {
         // 缓存绑定版本、进程和启动时间，新游戏进程不会沿用旧地址
         string cache=Path.Combine(files.Root,"runtime-zoom-location.txt");
-        File.WriteAllLines(cache,new[]{TravelService.ExeHash,process.Id.ToString(),process.StartTime.ToUniversalTime().Ticks.ToString(),zoomAddress.ToString("X")});
+        var lines=new List<string> {
+            ZoomCacheVersion,
+            TravelService.ExeHash,
+            process.Id.ToString(),
+            process.StartTime.ToUniversalTime().Ticks.ToString(),
+            zoomAddresses.Count.ToString()
+        };
+        foreach(long address in zoomAddresses)lines.Add(address.ToString("X"));
+        File.WriteAllLines(cache,lines);
     }
     private void ReleaseZoom() {
         // 游戏进程结束后清空全部缩放定位状态
-        zoomAddress=0;zoomCodeAddress=0;zoomConflict=false;ZoomReady=false;ZoomEnabled=false;ownsZoomChange=false;
+        zoomAddresses.Clear();zoomCodeAddress=0;ZoomReady=false;ZoomEnabled=false;ownsZoomChange=false;
         ZoomStatus="等待游戏启动";
     }
 }
