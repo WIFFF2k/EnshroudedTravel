@@ -8,7 +8,7 @@ public sealed partial class RuntimeTravelService {
     private const int ZoomArrayOffset = 93364;
     private const int ZoomScaleOffset = 93476;
     private const int ZoomAnchorLength = 16;
-    private const int ZoomCodeRva = 0xC1CF83;
+    private const int ZoomCodeRva = 0xC1EB03;
     private const byte NativeZoomCount = 4;
     private const byte ExtendedZoomCount = 5;
     private const int OriginalZoomBits = 0x3F333333;

@@ -11,11 +11,13 @@ public sealed class TravelService {
     public readonly string Root;
     public readonly string Game;
     public readonly string Save;
-    public const string ExeHash = "82e5020a8736348cd0374f004b2f5e5ef456b5bd27aa5420df34c7dd241cfeeb";
+    public const string ExeHash = "d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882";
+    private const string KfcOriginalHash = "54a8cb76b3229c486ef55a7ababcd48828fa0ffc5bb144d206f687fd0ab00a92";
+    private const string ResourcesOriginalHash = "53786c45797d275661f3ccc1fd8c84527a74f376e01f05fc76351f91fb17cb3d";
     public readonly string[] Names = { "enshrouded.kfc", "enshrouded.kfc_resources" };
     public string LastBackup = "尚未执行本次备份";
     public Action<string> Log = delegate {};
-    private string ResourceBackup { get { return Path.Combine(Root, "backups", "resources-25988036"); } }
+    private string ResourceBackup { get { return Path.Combine(Root, "backups", "resources-26082781"); } }
     private string Journal { get { return Path.Combine(Root, "operation.pending"); } }
 
     public TravelService(string root, string game, string save) {
@@ -54,22 +56,13 @@ public sealed class TravelService {
         if(running) throw new InvalidOperationException("GAME_RUNNING：请先正常退出游戏，再切换传送或备份");
     }
     public string State() {
-        // 以磁盘真实哈希判断状态，不依赖按钮上次值
+        // 当前主界面只允许运行中内存修改，磁盘资源必须保持适配版本原版
         if(!File.Exists(Path.Combine(Game, "enshrouded.exe"))) return "游戏目录不存在";
         if(HashFile(Path.Combine(Game, "enshrouded.exe")) != ExeHash) return "版本不支持";
-        bool pending=File.Exists(Journal);
-        if(pending && !string.Equals(File.ReadAllLines(Journal).FirstOrDefault(),Game,StringComparison.OrdinalIgnoreCase)) return "资源不同 · 已停止操作";
-        int original = 0, patched = 0;
-        foreach(string name in Names) {
-            using(var patch = new Patch(Path.Combine(Root, "payload", name + ".patch"))) {
-                string hash = HashFile(Path.Combine(Game, name));
-                if(hash == patch.Original) original++; else if(hash == patch.Patched) patched++;
-            }
-        }
-        if(pending && original+patched == Names.Length) return "恢复待处理";
-        if(original == Names.Length) return "已关闭";
-        if(patched == Names.Length) return "已启用 · 需在游戏中确认落点";
-        return "资源不同 · 已停止操作";
+        if(HashFile(Path.Combine(Game,"enshrouded.kfc"))!=KfcOriginalHash
+            || HashFile(Path.Combine(Game,"enshrouded.kfc_resources"))!=ResourcesOriginalHash)
+            return "资源不同 · 已停止操作";
+        return "已关闭";
     }
     public string BackupSaves() {
         // 复制全部存档后逐个比对源和目标，不覆盖已有备份

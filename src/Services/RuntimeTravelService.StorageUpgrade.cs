@@ -7,7 +7,7 @@ namespace EnshroudedTravel {
 public sealed partial class RuntimeTravelService {
     private const int StorageRecipeAnchorOffset = 8392;
     private const int StorageRecipeAnchorLength = 40;
-    private const string StorageRecipeTemplateHash = "c84f3c37567a9713888511fb7d611981e214a68a42ef1da4a086dddfa97d0d15";
+    private const string StorageRecipeTemplateHash = "57b01ea51ce724b14b506d65f8ddad22f58b0b790141914fd751f19481ce208f";
     private static readonly int[] StorageRecipeCountOffsets = {
         434932, 434956,
         435060, 435108, 435156,

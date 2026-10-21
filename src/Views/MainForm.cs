@@ -57,7 +57,7 @@ public sealed class MainForm : Form {
         cancel.Click+=delegate {cancellation.Cancel();cancel.Enabled=false;location.Text="正在取消，当前读取结束后停止";};
         searchRow.Controls.Add(progress,0,0);searchRow.Controls.Add(cancel,1,0);layout.Controls.Add(searchRow,0,5);
         layout.Controls.Add(log,0,6);
-        layout.Controls.Add(new Label {Text="适配：Build 25988036 · 仅修改内存 · 正常关闭助手时恢复",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,7); Controls.Add(layout);
+        layout.Controls.Add(new Label {Text="适配：Build 26082781 · 仅修改内存 · 正常关闭助手时恢复",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,7); Controls.Add(layout);
         service.Log=AddLog; runtime.Log=AddLog;
         runtime.Progress=new Progress<LocationProgress>(ShowProgress);
         RegisterFeature("传送", delegate {return runtime.Enabled||runtime.NeedsRestore;}, delegate {return runtime.Ready;}, delegate {runtime.Toggle(true);});

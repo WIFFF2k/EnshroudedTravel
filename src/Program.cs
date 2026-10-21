@@ -7,7 +7,7 @@ static class Program {
     static void Main() {
         // 防止同时打开两个资源控制器
         bool created;
-        using(var mutex=new Mutex(true,@"Local\EnshroudedTravel25988036",out created)) {
+        using(var mutex=new Mutex(true,@"Local\EnshroudedTravel26082781",out created)) {
             if(!created){MessageBox.Show("传送助手已经打开");return;}
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             string root=AppDomain.CurrentDomain.BaseDirectory;
