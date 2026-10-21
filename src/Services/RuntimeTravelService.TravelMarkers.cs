@@ -23,7 +23,10 @@ public sealed partial class RuntimeTravelService {
         660000613,  // 瘴气巢穴与瘴气根
         4293256260, // 魔药之井
         2815089672, // 重要任务感叹号
-        3308163813  // 支线任务感叹号
+        3308163813, // 支线任务感叹号
+        2909445535, // 古代方尖碑
+        2949516383, // 收藏品提示
+        2343026978  // 收藏品提示
     };
 
     private static int[] BuildTravelOffsets(byte[] template) {
