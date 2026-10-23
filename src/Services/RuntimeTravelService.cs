@@ -109,7 +109,6 @@ public sealed partial class RuntimeTravelService : IDisposable {
         cancel.ThrowIfCancellationRequested();Report("正在核对本次游戏的定位缓存");
         string cache=Path.Combine(files.Root,"runtime-location.txt");
         LoadZoomCache();
-        LoadDayNightCache();
         long found=0;
         if(File.Exists(cache)) {
             string[] fields=File.ReadAllLines(cache);long cached,start;int pid;
@@ -118,7 +117,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                 if(existing!=null && MatchesKnownTravelState(existing)){
                     found=cached;
                     Log("本次游戏传送地址复核通过");
-                    if(zoomAddresses.Count!=0 && dayNightAddresses.Count!=0){Log("本次游戏地图缩放与昼夜时间地址复核通过");return cached;}
+                    if(zoomAddresses.Count!=0){Log("本次游戏地图缩放地址复核通过");return cached;}
                     Log("传送缓存已复用，继续定位地图缩放数据");
                 }
             }
@@ -166,7 +165,6 @@ public sealed partial class RuntimeTravelService : IDisposable {
                             i+=skip[buffer[i+width-1]];
                         }
                         if(searchZoom)SearchZoomBuffer(buffer,available,pos,zoomAnchor,zoomSkip);
-                        SearchDayNightBuffer(buffer,available,pos);
                     } else {unreadable+=count;}
                     long step=pos+count<end?Math.Max(1,count-width+1):count;
                     pos+=step;done+=step;
