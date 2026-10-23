@@ -43,7 +43,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         travelOffsets=BuildTravelOffsets(original);
         zoomTemplate=LoadZoomTemplate(files.Root);
         storageRecipeTemplate=LoadStorageRecipeTemplate(files.Root);
-        Connection="未连接 · 等待游戏启动"; Status="等待游戏启动";
+        Connection="未连接 · 等待游戏启动"; Status="等待游戏启动"; DayNightStatus="等待游戏启动";
     }
     public void Poll(bool retry,CancellationToken cancel) {
         // 同一进程复用已验证地址，新进程必须重新定位
@@ -55,6 +55,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             catch { Ready=false; Status="目标数据已变化 · 请查看记录"; throw; }
             RefreshShroudTravelState();
             Status=Enabled?"已启用 · 多类目标可传送":"已关闭 · 可直接启用";
+            RefreshDayNightState();
             return;
         }
         ReleaseExited();
@@ -83,6 +84,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Enabled=ReadState(); ownsChange=false; Ready=true;
             RefreshZoomState();
             RefreshShroudTravelState();
+            RefreshDayNightState();
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
             Status=Enabled?"已启用 · 多类目标传送":"已关闭 · 可直接启用";
@@ -92,6 +94,8 @@ public sealed partial class RuntimeTravelService : IDisposable {
             else if(!string.IsNullOrEmpty(ZoomStatus))Log(ZoomStatus);
             if(ShroudTravelReady)Log("已定位瘴气传送限制");
             else if(!string.IsNullOrEmpty(ShroudTravelStatus))Log(ShroudTravelStatus);
+            if(DayNightReady)Log("已定位昼夜时间，可使用白天与黑夜调整");
+            else if(!string.IsNullOrEmpty(DayNightStatus))Log(DayNightStatus);
         } catch(OperationCanceledException) {
             if(!ownsChange)ReleaseExited();
             Ready=false;Status="定位已取消 · 正在等待自动重试";throw;
@@ -105,6 +109,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         cancel.ThrowIfCancellationRequested();Report("正在核对本次游戏的定位缓存");
         string cache=Path.Combine(files.Root,"runtime-location.txt");
         LoadZoomCache();
+        LoadDayNightCache();
         long found=0;
         if(File.Exists(cache)) {
             string[] fields=File.ReadAllLines(cache);long cached,start;int pid;
@@ -113,7 +118,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                 if(existing!=null && MatchesKnownTravelState(existing)){
                     found=cached;
                     Log("本次游戏传送地址复核通过");
-                    if(zoomAddresses.Count!=0){Log("本次游戏地图缩放地址复核通过");return cached;}
+                    if(zoomAddresses.Count!=0 && dayNightAddresses.Count!=0){Log("本次游戏地图缩放与昼夜时间地址复核通过");return cached;}
                     Log("传送缓存已复用，继续定位地图缩放数据");
                 }
             }
@@ -161,6 +166,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                             i+=skip[buffer[i+width-1]];
                         }
                         if(searchZoom)SearchZoomBuffer(buffer,available,pos,zoomAnchor,zoomSkip);
+                        SearchDayNightBuffer(buffer,available,pos);
                     } else {unreadable+=count;}
                     long step=pos+count<end?Math.Max(1,count-width+1):count;
                     pos+=step;done+=step;
@@ -277,6 +283,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         ReleaseZoom();
         ReleaseShroudTravel();
         ReleaseStorageUpgrade();
+        ReleaseDayNight();
     }
     public void Dispose() {
         // 恢复失败必须交给界面显示，不能静默退出

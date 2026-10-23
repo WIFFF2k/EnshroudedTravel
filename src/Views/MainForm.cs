@@ -7,6 +7,9 @@ using System.Threading;
 using System.Windows.Forms;
 namespace EnshroudedTravel {
 public sealed class MainForm : Form {
+    private const int ButtonHeight = 46;
+    private const int ButtonVerticalMargin = 4;
+    private const int ButtonRowHeight = ButtonHeight + ButtonVerticalMargin * 2;
     private static readonly Color ButtonBackColor = Color.FromArgb(49,61,77);
     private static readonly Color ButtonActiveBackColor = Color.FromArgb(21,103,91);
     private static readonly Color ButtonTextColor = Color.FromArgb(230,233,239);
@@ -14,7 +17,7 @@ public sealed class MainForm : Form {
     private readonly TravelService service;
     private readonly RuntimeTravelService runtime;
     private readonly Label connection = new Label(), backup = new Label();
-    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button();
+    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button(), day = new Button(), night = new Button();
     private readonly List<FeatureSwitch> featureSwitches = new List<FeatureSwitch>();
     private readonly TextBox log = new TextBox();
     private readonly Label location = new Label();
@@ -32,32 +35,45 @@ public sealed class MainForm : Form {
         BackColor=Color.FromArgb(24,29,37); ForeColor=Color.FromArgb(230,233,239);
         AutoScaleMode=AutoScaleMode.None; AutoSize=false; ClientSize=new Size(804,681);
         FormBorderStyle=FormBorderStyle.FixedSingle; MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen;
-        var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=8,Padding=new Padding(24),AutoSize=false};
+        var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(24),AutoSize=false};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        foreach(int height in new[]{48,42,60,108,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
+        foreach(int height in new[]{48,42,42,28,ButtonRowHeight*2,28,ButtonRowHeight,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent,100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute,42));
         layout.Controls.Add(new Label {Text="雾锁王国修改器",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,19,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft},0,0);
         int row=1; foreach(var label in new[]{connection,backup}) {label.Dock=DockStyle.Fill; label.TextAlign=ContentAlignment.MiddleLeft; label.AutoEllipsis=true; layout.Controls.Add(label,0,row++);}
+        layout.Controls.Add(CreateSectionLabel("启用 / 关闭功能"),0,3);
         var actions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=2,Margin=Padding.Empty};
         // 四个按钮列保持固定宽度，完整使用操作区宽度
         for(int i=0;i<4;i++)actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
-        for(int i=0;i<2;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        for(int i=0;i<2;i++)actions.RowStyles.Add(new RowStyle(SizeType.Absolute,ButtonRowHeight));
         var buttons=new[]{enableAll,save,enable,zoom,shroud,storage};
         var cells=new[]{0,0,3,0,0,1,1,1,2,1,3,1};
-        for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,4,10,4); ApplyButtonStyle(b,false); actions.Controls.Add(b,cells[i*2],cells[i*2+1]);}
+        for(int i=0;i<buttons.Length;i++){var b=buttons[i]; b.Dock=DockStyle.Fill; b.Margin=new Padding(0,ButtonVerticalMargin,10,ButtonVerticalMargin); ApplyButtonStyle(b,false); actions.Controls.Add(b,cells[i*2],cells[i*2+1]);}
         enable.Text="启用传送"; save.Text="备份存档"; enableAll.Text="启用全部"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送"; storage.Text="免费增大箱子";
-        layout.Controls.Add(actions,0,3);
+        layout.Controls.Add(actions,0,4);
+        layout.Controls.Add(CreateSectionLabel("手动调整"),0,5);
+        var manualActions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty};
+        // 手动调整与开关分区保持相同列宽
+        for(int i=0;i<4;i++)manualActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
+        manualActions.RowStyles.Add(new RowStyle(SizeType.Absolute,ButtonRowHeight));
+        day.Text="白天"; night.Text="黑夜";
+        foreach(var button in new[]{day,night}) {
+            button.Dock=DockStyle.Fill;button.Margin=new Padding(0,ButtonVerticalMargin,10,ButtonVerticalMargin);
+            ApplyButtonStyle(button,false);
+        }
+        manualActions.Controls.Add(day,0,0);manualActions.Controls.Add(night,1,0);
+        layout.Controls.Add(manualActions,0,6);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
         location.Dock=DockStyle.Fill;location.TextAlign=ContentAlignment.MiddleLeft;location.AutoEllipsis=true;location.Text="等待游戏启动后自动寻找传送数据";
-        layout.Controls.Add(location,0,4);
+        layout.Controls.Add(location,0,7);
         var searchRow=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};
         searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,120));
         progress.Dock=DockStyle.Fill;progress.Margin=new Padding(0,5,12,5);progress.Maximum=1000;
         cancel.Text="取消定位";cancel.Dock=DockStyle.Fill;ApplyButtonStyle(cancel,false);cancel.Enabled=false;
         cancel.Click+=delegate {cancellation.Cancel();cancel.Enabled=false;location.Text="正在取消，当前读取结束后停止";};
-        searchRow.Controls.Add(progress,0,0);searchRow.Controls.Add(cancel,1,0);layout.Controls.Add(searchRow,0,5);
-        layout.Controls.Add(log,0,6);
-        layout.Controls.Add(new Label {Text="适配：Build 26082781 · 仅修改内存 · 正常关闭助手时恢复",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,7); Controls.Add(layout);
+        searchRow.Controls.Add(progress,0,0);searchRow.Controls.Add(cancel,1,0);layout.Controls.Add(searchRow,0,8);
+        layout.Controls.Add(log,0,9);
+        layout.Controls.Add(new Label {Text="适配：Build 26082781 · 仅修改内存 · 正常关闭助手时恢复",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,10); Controls.Add(layout);
         service.Log=AddLog; runtime.Log=AddLog;
         runtime.Progress=new Progress<LocationProgress>(ShowProgress);
         RegisterFeature("传送", delegate {return runtime.Enabled||runtime.NeedsRestore;}, delegate {return runtime.Ready;}, delegate {runtime.Toggle(true);});
@@ -80,6 +96,8 @@ public sealed class MainForm : Form {
             bool turnOn=!runtime.StorageUpgradeEnabled;
             await Run(delegate {runtime.ToggleStorageUpgrade(turnOn);},turnOn?"正在启用免费箱子升级":"正在关闭免费箱子升级");
         };
+        day.Click+=async delegate {await Run(delegate {runtime.JumpToDay();},"正在调整到白天");};
+        night.Click+=async delegate {await Run(delegate {runtime.JumpToNight();},"正在调整到黑夜");};
         save.Click+=async delegate {
             if(runtime.Running) {
                 AddLog("备份存档已禁用：请先正常退出游戏，完全关闭后再备份");
@@ -125,7 +143,8 @@ public sealed class MainForm : Form {
             busy=false;
             if(!IsDisposed&&!Disposing){
                 cancel.Enabled=false;progress.Style=ProgressBarStyle.Continuous;
-                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady){progress.Value=1000;location.Text="定位完成，可以使用传送、缩放与瘴气传送开关";}
+                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady&&runtime.DayNightReady){progress.Value=1000;location.Text="定位完成，可以使用功能开关和昼夜调整";}
+                else if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady){progress.Value=1000;location.Text="传送、缩放与瘴气传送已就绪 · "+runtime.DayNightStatus;}
                 else if(runtime.Ready&&runtime.ZoomReady){progress.Value=1000;location.Text="传送与缩放已就绪 · "+runtime.ShroudTravelStatus;}
                 else if(runtime.Ready){progress.Value=1000;location.Text=string.IsNullOrEmpty(runtime.ZoomStatus)?"传送已就绪，地图缩放尚未就绪":"传送已就绪 · "+runtime.ZoomStatus;}
                 else {progress.Value=0;location.Text=runtime.Status;}
@@ -147,6 +166,10 @@ public sealed class MainForm : Form {
     private static string ConnectionText(string value) {
         // 仅精简连接展示，不改变服务状态
         return value.Replace(" · 支持运行中切换","");
+    }
+    private static Label CreateSectionLabel(string text) {
+        // 用独立标题划分功能开关和手动调整
+        return new Label {Text=text,Dock=DockStyle.Fill,TextAlign=ContentAlignment.BottomLeft,ForeColor=Color.Silver,Font=new Font("Microsoft YaHei UI",10F,FontStyle.Bold)};
     }
     private void RegisterFeature(string name,Func<bool> enabled,Func<bool> ready,Action enable) {
         // 注册可由“启用全部”统一开启的功能
@@ -216,6 +239,8 @@ public sealed class MainForm : Form {
         storage.Text=runtime.StorageUpgradeEnabled?"关闭免费箱子升级":"免费增大箱子";
         ApplyButtonStyle(storage,runtime.StorageUpgradeEnabled);
         storage.Enabled=!busy&&!closing&&(runtime.Ready||runtime.StorageUpgradeNeedsRestore);
+        day.Enabled=!busy&&!closing&&runtime.DayNightReady;
+        night.Enabled=!busy&&!closing&&runtime.DayNightReady;
         save.Enabled=!closing;enableAll.Enabled=!busy&&!closing;
     }
 }
