@@ -43,7 +43,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         travelOffsets=BuildTravelOffsets(original);
         zoomTemplate=LoadZoomTemplate(files.Root);
         storageRecipeTemplate=LoadStorageRecipeTemplate(files.Root);
-        Connection="未连接 · 等待游戏启动"; Status="等待游戏启动"; DayNightStatus="等待游戏启动";
+        Connection="未连接 · 等待游戏启动"; Status="等待游戏启动"; DayNightStatus="等待游戏启动"; DamageBoostStatus="等待游戏启动";
     }
     public void Poll(bool retry,CancellationToken cancel) {
         // 同一进程复用已验证地址，新进程必须重新定位
@@ -56,6 +56,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             RefreshShroudTravelState();
             Status=Enabled?"已启用 · 多类目标可传送":"已关闭 · 可直接启用";
             RefreshDayNightState();
+            RefreshDamageBoostState();
             return;
         }
         ReleaseExited();
@@ -85,6 +86,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             RefreshZoomState();
             RefreshShroudTravelState();
             RefreshDayNightState();
+            RefreshDamageBoostState();
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
             Status=Enabled?"已启用 · 多类目标传送":"已关闭 · 可直接启用";
@@ -96,6 +98,8 @@ public sealed partial class RuntimeTravelService : IDisposable {
             else if(!string.IsNullOrEmpty(ShroudTravelStatus))Log(ShroudTravelStatus);
             if(DayNightReady)Log("已定位昼夜时间，可使用白天与黑夜调整");
             else if(!string.IsNullOrEmpty(DayNightStatus))Log(DayNightStatus);
+            if(DamageBoostReady)Log("已定位命中伤害结算，开启后将记录实际触发数值");
+            else if(!string.IsNullOrEmpty(DamageBoostStatus))Log(DamageBoostStatus);
         } catch(OperationCanceledException) {
             if(!ownsChange)ReleaseExited();
             Ready=false;Status="定位已取消 · 正在等待自动重试";throw;
@@ -270,6 +274,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(process!=null && !process.HasExited && ownsStorageUpgradeChange) {
             try {ToggleStorageUpgrade(false);} catch(Exception ex) {errors.Add(ex);}
         }
+        if(process!=null && !process.HasExited && ownsDamageBoostChange) {
+            try {ToggleDamageBoost(false);} catch(Exception ex) {errors.Add(ex);}
+        }
         if(errors.Count==1)throw errors[0];
         if(errors.Count>1)throw new AggregateException("MEMORY_RESTORE：多项内存修改均未完全恢复",errors);
         if(process==null || process.HasExited)ReleaseExited();
@@ -282,6 +289,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         ReleaseShroudTravel();
         ReleaseStorageUpgrade();
         ReleaseDayNight();
+        ReleaseDamageBoost();
     }
     public void Dispose() {
         // 恢复失败必须交给界面显示，不能静默退出

@@ -17,7 +17,7 @@ public sealed class MainForm : Form {
     private readonly TravelService service;
     private readonly RuntimeTravelService runtime;
     private readonly Label connection = new Label(), backup = new Label();
-    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button(), day = new Button(), night = new Button();
+    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button(), day = new Button(), night = new Button(), damageBoost = new Button();
     private readonly List<FeatureSwitch> featureSwitches = new List<FeatureSwitch>();
     private readonly TextBox log = new TextBox();
     private readonly Label location = new Label();
@@ -33,11 +33,11 @@ public sealed class MainForm : Form {
         service=instance; runtime=new RuntimeTravelService(service); Text="雾锁王国修改器";
         Font=new Font("Microsoft YaHei UI",10F);
         BackColor=Color.FromArgb(24,29,37); ForeColor=Color.FromArgb(230,233,239);
-        AutoScaleMode=AutoScaleMode.None; AutoSize=false; ClientSize=new Size(804,681);
+        AutoScaleMode=AutoScaleMode.None; AutoSize=false; ClientSize=new Size(804,735);
         FormBorderStyle=FormBorderStyle.FixedSingle; MaximizeBox=false; StartPosition=FormStartPosition.CenterScreen;
         var layout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(24),AutoSize=false};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        foreach(int height in new[]{48,42,42,28,ButtonRowHeight*2,28,ButtonRowHeight,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
+        foreach(int height in new[]{48,42,42,28,ButtonRowHeight*2,28,ButtonRowHeight*2,36,36}) layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent,100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute,42));
         layout.Controls.Add(new Label {Text="雾锁王国修改器",Dock=DockStyle.Fill,Font=new Font(Font.FontFamily,19,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft},0,0);
         int row=1; foreach(var label in new[]{connection,backup}) {label.Dock=DockStyle.Fill; label.TextAlign=ContentAlignment.MiddleLeft; label.AutoEllipsis=true; layout.Controls.Add(label,0,row++);}
@@ -52,16 +52,18 @@ public sealed class MainForm : Form {
         enable.Text="启用传送"; save.Text="备份存档"; enableAll.Text="启用全部"; zoom.Text="开启更小缩放"; shroud.Text="允许瘴气中传送"; storage.Text="免费增大箱子";
         layout.Controls.Add(actions,0,4);
         layout.Controls.Add(CreateSectionLabel("手动调整"),0,5);
-        var manualActions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=1,Margin=Padding.Empty};
+        var manualActions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=4,RowCount=2,Margin=Padding.Empty};
         // 手动调整与开关分区保持相同列宽
         for(int i=0;i<4;i++)manualActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,189));
-        manualActions.RowStyles.Add(new RowStyle(SizeType.Absolute,ButtonRowHeight));
+        for(int i=0;i<2;i++)manualActions.RowStyles.Add(new RowStyle(SizeType.Absolute,ButtonRowHeight));
         day.Text="白天"; night.Text="黑夜";
-        foreach(var button in new[]{day,night}) {
+        damageBoost.Text="伤害提升10倍";
+        foreach(var button in new[]{day,night,damageBoost}) {
             button.Dock=DockStyle.Fill;button.Margin=new Padding(0,ButtonVerticalMargin,10,ButtonVerticalMargin);
             ApplyButtonStyle(button,false);
         }
         manualActions.Controls.Add(day,0,0);manualActions.Controls.Add(night,1,0);
+        manualActions.Controls.Add(damageBoost,0,1);
         layout.Controls.Add(manualActions,0,6);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
         location.Dock=DockStyle.Fill;location.TextAlign=ContentAlignment.MiddleLeft;location.AutoEllipsis=true;location.Text="等待游戏启动后自动寻找传送数据";
@@ -73,7 +75,7 @@ public sealed class MainForm : Form {
         cancel.Click+=delegate {cancellation.Cancel();cancel.Enabled=false;location.Text="正在取消，当前读取结束后停止";};
         searchRow.Controls.Add(progress,0,0);searchRow.Controls.Add(cancel,1,0);layout.Controls.Add(searchRow,0,8);
         layout.Controls.Add(log,0,9);
-        layout.Controls.Add(new Label {Text="Build 26082781 · 关闭时恢复功能开关 · 昼夜调整不回退",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,10); Controls.Add(layout);
+        layout.Controls.Add(new Label {Text="Build 26082781 · 关闭时恢复开关与伤害提升 · 昼夜调整不回退",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,ForeColor=Color.Silver},0,10); Controls.Add(layout);
         service.Log=AddLog; runtime.Log=AddLog;
         runtime.Progress=new Progress<LocationProgress>(ShowProgress);
         RegisterFeature("传送", delegate {return runtime.Enabled||runtime.NeedsRestore;}, delegate {return runtime.Ready;}, delegate {runtime.Toggle(true);});
@@ -98,6 +100,10 @@ public sealed class MainForm : Form {
         };
         day.Click+=async delegate {await Run(delegate {runtime.JumpToDay();},"正在调整到白天");};
         night.Click+=async delegate {await Run(delegate {runtime.JumpToNight();},"正在调整到黑夜");};
+        damageBoost.Click+=async delegate {
+            bool turnOn=!runtime.DamageBoostEnabled;
+            await Run(delegate {runtime.ToggleDamageBoost(turnOn);},turnOn?"正在开启伤害提升十倍":"正在关闭伤害提升十倍");
+        };
         save.Click+=async delegate {
             if(runtime.Running) {
                 AddLog("备份存档已禁用：请先正常退出游戏，完全关闭后再备份");
@@ -143,7 +149,7 @@ public sealed class MainForm : Form {
             busy=false;
             if(!IsDisposed&&!Disposing){
                 cancel.Enabled=false;progress.Style=ProgressBarStyle.Continuous;
-                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady&&runtime.DayNightReady){progress.Value=1000;location.Text="定位完成，可以使用功能开关和昼夜调整";}
+                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady&&runtime.DayNightReady&&runtime.DamageBoostReady){progress.Value=1000;location.Text="定位完成，可以使用功能开关、昼夜调整和伤害提升";}
                 else if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady){progress.Value=1000;location.Text="传送、缩放与瘴气传送已就绪 · "+runtime.DayNightStatus;}
                 else if(runtime.Ready&&runtime.ZoomReady){progress.Value=1000;location.Text="传送与缩放已就绪 · "+runtime.ShroudTravelStatus;}
                 else if(runtime.Ready){progress.Value=1000;location.Text=string.IsNullOrEmpty(runtime.ZoomStatus)?"传送已就绪，地图缩放尚未就绪":"传送已就绪 · "+runtime.ZoomStatus;}
@@ -241,6 +247,8 @@ public sealed class MainForm : Form {
         storage.Enabled=!busy&&!closing&&(runtime.Ready||runtime.StorageUpgradeNeedsRestore);
         day.Enabled=!busy&&!closing&&runtime.DayNightReady;
         night.Enabled=!busy&&!closing&&runtime.DayNightReady;
+        ApplyButtonStyle(damageBoost,runtime.DamageBoostEnabled);
+        damageBoost.Enabled=!busy&&!closing&&(runtime.DamageBoostReady||runtime.DamageBoostEnabled);
         save.Enabled=!closing;enableAll.Enabled=!busy&&!closing;
     }
 }
