@@ -61,11 +61,10 @@ public sealed partial class RuntimeTravelService {
             }
             candidates.Add(cached);
         }
-        foreach(long cached in candidates) {
-            if(!ValidateZoomBundle(cached)) {
-                ZoomStatus="地图缩放的旧位置已失效 · 正在重新定位";
-                return;
-            }
+        for(int i=candidates.Count-1;i>=0;i--) {
+            if(ValidateZoomBundle(candidates[i]))continue;
+            Log("已忽略失效的地图缩放缓存地址："+candidates[i].ToString("X"));
+            candidates.RemoveAt(i);
         }
         if(candidates.Count==0){
             ZoomStatus="地图缩放的旧位置已失效 · 正在重新定位";
@@ -110,6 +109,7 @@ public sealed partial class RuntimeTravelService {
         if(zoomAddresses.Count==0)throw new IOException("ZOOM_NOT_FOUND：地图缩放数据尚未定位");
         EnsureZoomCodeAddress();
         if(zoomCodeAddress==0)throw new IOException("ZOOM_CODE_NOT_FOUND：地图缩放代码尚未定位");
+        RemoveExpiredZoomCopies();
         bool? bundleEnabled=null;
         foreach(long location in zoomAddresses) {
             byte[] data=ReadAt(location,zoomTemplate.Length);
@@ -134,7 +134,7 @@ public sealed partial class RuntimeTravelService {
     }
     private void RefreshZoomState() {
         // 缩放状态独立刷新，不影响已经可用的传送定位
-        if(zoomAddresses.Count==0)return;
+        if(zoomAddresses.Count==0){ZoomReady=false;return;}
         try {
             ZoomEnabled=ReadZoomState();ZoomReady=true;
             ZoomStatus=(ZoomEnabled?"已启用 · 缩放档位为 16/8/4/2/0.45":"已关闭 · 原生缩放档位为 16/8/4/2")
@@ -144,6 +144,25 @@ public sealed partial class RuntimeTravelService {
             ZoomStatus="地图缩放状态已变化 · 请重新打开修改器";
             Log("地图缩放读取失败："+ex.Message);
         }
+    }
+    private void RemoveExpiredZoomCopies() {
+        // 资源可能在扫描期间卸载并复用地址，仅保留身份仍与完整模板一致的副本
+        // 第五档单独验证，不能将未知档位当成地址失效而跳过报错
+        var live=new List<long>();
+        foreach(long location in zoomAddresses) {
+            byte[] data=ReadAt(location,zoomTemplate.Length);
+            bool same=data!=null;
+            if(same)for(int i=0;i<data.Length;i++) {
+                if(i>=ZoomScaleOffset && i<ZoomScaleOffset+4)continue;
+                if(data[i]!=zoomTemplate[i]){same=false;break;}
+            }
+            if(same)live.Add(location);
+        }
+        if(live.Count==0)throw new IOException("ZOOM_UNLOADED：地图缩放资源已卸载，请打开地图后重新连接助手");
+        if(live.Count==zoomAddresses.Count)return;
+        int expired=zoomAddresses.Count-live.Count;
+        zoomAddresses.Clear();zoomAddresses.AddRange(live);
+        Log("已排除 "+expired+" 份失效缩放地址，保留 "+live.Count+" 份完整配置");
     }
     public void ToggleZoom(bool enable) {
         // 同时切换第五档数值和相机档位数量，完整回读通过后才确认成功

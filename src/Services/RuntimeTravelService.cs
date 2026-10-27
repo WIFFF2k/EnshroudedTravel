@@ -53,6 +53,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             if(ownsChange && SessionEnded()) { Toggle(false); Log("离开世界，已关闭传送"); }
             try { Enabled=ReadState(); Ready=true; }
             catch { Ready=false; Status="目标数据已变化 · 请查看记录"; throw; }
+            RefreshZoomState();
             RefreshShroudTravelState();
             Status=Enabled?"已启用 · 多类目标可传送":"已关闭 · 可直接启用";
             RefreshDayNightState();
@@ -183,7 +184,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         Report("扫描完成，正在核验定位结果",done,total,unreadable,elapsed.Elapsed.TotalSeconds,false);
         if(found!=0)File.WriteAllLines(cache,new[]{TravelService.ExeHash,process.Id.ToString(),process.StartTime.ToUniversalTime().Ticks.ToString(),found.ToString("X")});
         if(zoomAddresses.Count!=0){
-            WriteZoomCache();RefreshZoomState();
+            RefreshZoomState();if(ZoomReady)WriteZoomCache();
         } else ZoomStatus="尚未找到地图缩放 · 打开地图后重新打开修改器";
         return found;
     }
