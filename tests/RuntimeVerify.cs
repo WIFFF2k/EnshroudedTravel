@@ -9,7 +9,7 @@ using System.Reflection;
 using System.Windows.Forms;
 using EnshroudedTravel;
 class RuntimeVerify {
-    static readonly string root="C:/Workspace/EnshroudedTravel";
+    static readonly string root=AppDomain.CurrentDomain.BaseDirectory;
     static readonly List<string> results=new List<string>();
     static void Check(bool ok,string label) {
         // 断言界面操作产生的真实结果
@@ -27,7 +27,7 @@ class RuntimeVerify {
     }
     [STAThread] static int Main() {
         // 只在用户已经确认的备份世界中调用真实生产界面
-        var files=new TravelService(root,"C:/Games/Enshrouded","C:/Steam/userdata/LOCAL_ACCOUNT/1203620");
+        var files=LocalConfiguration.CreateService(root);
         var paths=new[]{Path.Combine(files.Save,"remote/character0.ksd"),Path.Combine(files.Save,"remote/world0.ksd"),Path.Combine(files.Game,"enshrouded.kfc"),Path.Combine(files.Game,"enshrouded.kfc_resources")};
         var before=paths.ToDictionary(p=>p,p=>TravelService.HashFile(p));
         MainForm form=null;RuntimeTravelService runtime=null;

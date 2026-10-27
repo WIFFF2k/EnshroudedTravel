@@ -127,7 +127,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                 }
             }
         }
-        // 用目标图标的三十二字节特征跳跃搜索，保留全域唯一性检查
+        // 先核验完整只读资源区，缺失时才搜索已观察到临时资源副本的私有读写区
         const int anchor=1960,width=32;
         byte[] pattern=original.Skip(anchor).Take(width).ToArray();
         int[] skip=Enumerable.Repeat(width,256).ToArray();
@@ -135,22 +135,33 @@ public sealed partial class RuntimeTravelService : IDisposable {
         byte[] zoomAnchor=BuildZoomAnchor();
         int[] zoomSkip=Enumerable.Repeat(zoomAnchor.Length,256).ToArray();
         for(int i=0;i<zoomAnchor.Length-1;i++)zoomSkip[zoomAnchor[i]]=zoomAnchor.Length-1-i;
-        bool searchZoom=zoomAddresses.Count==0;
-        byte[] buffer=new byte[2*1024*1024]; long cursor=0;
+        bool searchZoom=zoomAddresses.Count==0,searchTravel=found==0;
+        byte[] buffer=new byte[8*1024*1024]; long cursor=0;
         var regions=new List<Native.Region>();long total=0,done=0,unreadable=0;
-        Report("正在统计可搜索的内存区域");
+        var writableRegions=new List<Native.Region>();long writableTotal=0;
+        Report("正在统计私有资源内存区域");
         Native.Region region;
         while(Native.VirtualQueryEx(handle,new IntPtr(cursor),out region,(UIntPtr)Marshal.SizeOf(typeof(Native.Region)))!=UIntPtr.Zero) {
             cancel.ThrowIfCancellationRequested();
             long start=region.BaseAddress.ToInt64(),length=checked((long)region.RegionSize.ToUInt64());
             if(length<=0 || start>long.MaxValue-length) break;
             long end=start+length; uint access=region.Protect&255;
-            if(region.State==0x1000 && (region.Protect&0x100)==0 && (access==2||access==4||access==8||access==0x20||access==0x40||access==0x80)) {
-                regions.Add(region);total+=length;
+            if(region.State==0x1000 && region.Type==0x20000 && (region.Protect&0x100)==0
+                && (access==2||access==4||access==8)) {
+                if(access==2){regions.Add(region);total+=length;}
+                else {writableRegions.Add(region);writableTotal+=length;}
             }
             cursor=end;
         }
         var elapsed=Stopwatch.StartNew();long lastReport=-250;
+        Log("优先核验只读资源区 "+(total/1048576.0).ToString("0.0")+" MB；私有读写区 "+(writableTotal/1048576.0).ToString("0.0")+" MB 仅在资源缺失时搜索");
+        for(int phase=0;phase<2;phase++) {
+        if(phase==1) {
+            searchTravel=found==0;searchZoom=zoomAddresses.Count==0;
+            if(!searchTravel && !searchZoom)break;
+            regions=writableRegions;total=writableTotal;done=0;
+            Log("只读区缺少"+(searchTravel?"传送":"")+(searchZoom?"地图缩放":"")+"资源，继续核验私有读写区");
+        }
         foreach(var selected in regions) {
                 long start=selected.BaseAddress.ToInt64(),end=start+checked((long)selected.RegionSize.ToUInt64());
                 for(long pos=start;pos<end;) {
@@ -158,7 +169,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
                     int count=(int)Math.Min(buffer.Length,end-pos); UIntPtr read;
                     if(Native.ReadProcessMemory(handle,new IntPtr(pos),buffer,(UIntPtr)count,out read)) {
                         int available=(int)read.ToUInt64();
-                        for(int i=0;i<=available-width;) {
+                        for(int i=0;searchTravel && i<=available-width;) {
                             int j=width-1;while(j>=0 && buffer[i+j]==pattern[j])j--;
                             if(j<0 && pos+i>=anchor) {
                                 long candidate=pos+i-anchor;byte[] data=ReadAt(candidate);
@@ -175,9 +186,11 @@ public sealed partial class RuntimeTravelService : IDisposable {
                     pos+=step;done+=step;
                     if(elapsed.ElapsedMilliseconds-lastReport>=250 || done==total) {
                         lastReport=elapsed.ElapsedMilliseconds;
-                        Report(searchZoom?"正在寻找传送与地图缩放数据":"正在寻找传送数据",done,total,unreadable,elapsed.Elapsed.TotalSeconds,true);
+                        string targets=searchTravel?(searchZoom?"传送与地图缩放":"传送"):"地图缩放";
+                        Report("正在核验"+(phase==0?"只读资源区":"私有读写区")+" · "+targets,done,total,unreadable,elapsed.Elapsed.TotalSeconds,true);
                     }
                 }
+        }
         }
         cancel.ThrowIfCancellationRequested();
         if(unreadable>0)Log("扫描期间有 "+(unreadable/1048576.0).ToString("0.0")+" MB 内存变为不可读");

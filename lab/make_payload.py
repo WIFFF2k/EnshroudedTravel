@@ -5,7 +5,7 @@ import json
 import struct
 
 ROOT = Path(__file__).resolve().parents[1]
-GAME = Path('C:/Games/Enshrouded')
+GAME = Path(json.loads((ROOT / 'config.local.json').read_text(encoding='utf-8'))['gameDirectory'])
 
 def digest(data):
     # 为资源生成版本指纹

@@ -20,12 +20,12 @@ class ProgressVerify {
     }
     [STAThread] static int Main() {
         // 只测试读取、进度、取消和缓存重连，不执行游戏内存写入
-        string root="C:/Workspace/EnshroudedTravel",cache=Path.Combine(root,"runtime-location.txt"),held=cache+".progress-test-"+Guid.NewGuid().ToString("N");
+        string root=AppDomain.CurrentDomain.BaseDirectory,cache=Path.Combine(root,"runtime-location.txt"),held=cache+".progress-test-"+Guid.NewGuid().ToString("N");
         var results=new List<string>();MainForm form=null;
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         try {
             File.Move(cache,held);
-            form=new MainForm(new TravelService(root,"C:/Games/Enshrouded","C:/Steam/userdata/LOCAL_ACCOUNT/1203620"));form.Show();
+            form=new MainForm(LocalConfiguration.CreateService(root));form.Show();
             var bar=All(form).OfType<ProgressBar>().Single();
             var cancel=All(form).OfType<Button>().Single(x=>x.Text=="取消定位");
             var retry=All(form).OfType<Button>().Single(x=>x.Text=="重新校验");

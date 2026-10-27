@@ -14,7 +14,9 @@ static class Program {
             if(!created){ShowExistingWindow();return;}
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             string root=AppDomain.CurrentDomain.BaseDirectory;
-            var service=new TravelService(root,"C:/Games/Enshrouded","C:/Steam/userdata/LOCAL_ACCOUNT/1203620");
+            TravelService service;
+            try {service=LocalConfiguration.CreateService(root);}
+            catch(System.IO.IOException ex) {MessageBox.Show(ex.Message,"配置未完成");return;}
             Application.Run(new MainForm(service));
         }
     }
