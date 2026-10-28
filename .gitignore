@@ -3,9 +3,11 @@
 /runtime-*.txt
 /operation.pending
 /config.local.json
+/dist/
 
 # 编译产物和本机工具
 *.exe
+!/EnshroudedTravel.exe
 *.dll
 *.pdb
 *.obj

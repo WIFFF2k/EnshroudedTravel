@@ -2,6 +2,9 @@
 
 使用 .NET Framework WinForms，入口为 Program，保留单实例控制
 启动目录通过 Services/LocalConfiguration 读取 config.local.json，个人目录不写入源代码
+build.ps1 将本机 payload 中三份模板内置到根目录 EnshroudedTravel.exe，该程序作为仓库交付文件
+用户拉取仓库后复制 config.example.json 为 config.local.json，填写路径并直接启动，无需编译
+构建仍需开发者本地准备对应模板；个人配置、存档、日志和缓存保持忽略
 重复启动会查找同路径进程的主窗口，包括隐藏窗口，恢复显示并前置；不再只弹出“已经打开”
 
 - Views/MainForm：自动连接、真实定位进度、取消、重试和运行中传送开关

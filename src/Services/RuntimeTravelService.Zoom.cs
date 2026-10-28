@@ -23,12 +23,9 @@ public sealed partial class RuntimeTravelService {
     public bool ZoomEnabled { get; private set; }
     public string ZoomStatus { get; private set; }
 
-    private static byte[] LoadZoomTemplate(string root) {
+    private static byte[] LoadZoomTemplate() {
         // 载入并核验当前版本唯一的地图界面资源模板
-        string path=Path.Combine(root,"payload","zoom-original.bin");
-        if(!File.Exists(path))throw new IOException("ZOOM_TEMPLATE_MISSING：缺少地图缩放定位模板");
-        if(TravelService.HashFile(path)!=ZoomTemplateHash)throw new IOException("ZOOM_TEMPLATE_INVALID：地图缩放定位模板校验失败");
-        byte[] data=File.ReadAllBytes(path);
+        byte[] data=LoadBundledTemplate("zoom-original.bin",ZoomTemplateHash);
         if(data.Length<=ZoomScaleOffset+4 || BitConverter.ToInt32(data,ZoomScaleOffset)!=OriginalZoomBits)
             throw new IOException("ZOOM_TEMPLATE_INVALID：地图缩放模板缺少相机最远档位");
         return data;

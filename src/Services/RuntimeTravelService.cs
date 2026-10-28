@@ -37,12 +37,10 @@ public sealed partial class RuntimeTravelService : IDisposable {
     public RuntimeTravelService(TravelService instance) {
         // 载入与当前版本绑定的完整注册表模板
         files=instance;
-        string path=Path.Combine(files.Root,"payload","registry-original.bin");
-        if(TravelService.HashFile(path)!=RegistryHash) throw new IOException("TEMPLATE_INVALID：定位模板校验失败");
-        original=File.ReadAllBytes(path);
+        original=LoadBundledTemplate("registry-original.bin",RegistryHash);
         travelOffsets=BuildTravelOffsets(original);
-        zoomTemplate=LoadZoomTemplate(files.Root);
-        storageRecipeTemplate=LoadStorageRecipeTemplate(files.Root);
+        zoomTemplate=LoadZoomTemplate();
+        storageRecipeTemplate=LoadStorageRecipeTemplate();
         Connection="未连接 · 等待游戏启动"; Status="等待游戏启动"; DayNightStatus="等待游戏启动"; DamageBoostStatus="等待游戏启动";
     }
     public void Poll(bool retry,CancellationToken cancel) {

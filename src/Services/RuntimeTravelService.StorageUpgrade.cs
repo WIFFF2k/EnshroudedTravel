@@ -28,13 +28,9 @@ public sealed partial class RuntimeTravelService {
     public bool StorageUpgradeNeedsRestore { get { return ownsStorageUpgradeChange; } }
     public string StorageUpgradeStatus { get; private set; }
 
-    private static byte[] LoadStorageRecipeTemplate(string root) {
+    private static byte[] LoadStorageRecipeTemplate() {
         // 载入并核验箱子容量升级配方模板
-        string path=Path.Combine(root,"payload","storage-recipes-original.bin");
-        if(!File.Exists(path))throw new IOException("STORAGE_TEMPLATE_MISSING：缺少箱子升级配方模板");
-        if(TravelService.HashFile(path)!=StorageRecipeTemplateHash)
-            throw new IOException("STORAGE_TEMPLATE_INVALID：箱子升级配方模板校验失败");
-        byte[] data=File.ReadAllBytes(path);
+        byte[] data=LoadBundledTemplate("storage-recipes-original.bin",StorageRecipeTemplateHash);
         foreach(int offset in StorageRecipeCountOffsets) {
             if(offset<0 || offset+4>data.Length || BitConverter.ToUInt32(data,offset)==0)
                 throw new IOException("STORAGE_TEMPLATE_INVALID：箱子升级配方材料数量不符");
