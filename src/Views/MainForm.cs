@@ -17,7 +17,7 @@ public sealed class MainForm : Form {
     private readonly TravelService service;
     private readonly RuntimeTravelService runtime;
     private readonly Label connection = new Label(), backup = new Label();
-    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button(), day = new Button(), night = new Button(), damageBoost = new Button();
+    private readonly Button enable = new Button(), zoom = new Button(), shroud = new Button(), storage = new Button(), save = new Button(), enableAll = new Button(), day = new Button(), night = new Button(), damageBoost = new Button(), stamina = new Button();
     private readonly List<FeatureSwitch> featureSwitches = new List<FeatureSwitch>();
     private readonly TextBox log = new TextBox();
     private readonly Label location = new Label();
@@ -58,12 +58,14 @@ public sealed class MainForm : Form {
         for(int i=0;i<2;i++)manualActions.RowStyles.Add(new RowStyle(SizeType.Absolute,ButtonRowHeight));
         day.Text="白天"; night.Text="黑夜";
         damageBoost.Text="伤害提升10倍";
-        foreach(var button in new[]{day,night,damageBoost}) {
+        stamina.Text="无限体力";
+        foreach(var button in new[]{day,night,damageBoost,stamina}) {
             button.Dock=DockStyle.Fill;button.Margin=new Padding(0,ButtonVerticalMargin,10,ButtonVerticalMargin);
             ApplyButtonStyle(button,false);
         }
         manualActions.Controls.Add(day,0,0);manualActions.Controls.Add(night,1,0);
         manualActions.Controls.Add(damageBoost,0,1);
+        manualActions.Controls.Add(stamina,1,1);
         layout.Controls.Add(manualActions,0,6);
         log.Multiline=true; log.ReadOnly=true; log.ScrollBars=ScrollBars.Vertical; log.Dock=DockStyle.Fill; log.BackColor=Color.FromArgb(17,21,28); log.ForeColor=ForeColor; log.BorderStyle=BorderStyle.FixedSingle;
         location.Dock=DockStyle.Fill;location.TextAlign=ContentAlignment.MiddleLeft;location.AutoEllipsis=true;location.Text="等待游戏启动后自动寻找传送数据";
@@ -103,6 +105,10 @@ public sealed class MainForm : Form {
         damageBoost.Click+=async delegate {
             bool turnOn=!runtime.DamageBoostEnabled;
             await Run(delegate {runtime.ToggleDamageBoost(turnOn);},turnOn?"正在开启伤害提升十倍":"正在关闭伤害提升十倍");
+        };
+        stamina.Click+=async delegate {
+            bool turnOn=!(runtime.StaminaEnabled||runtime.StaminaNeedsRestore);
+            await Run(delegate {runtime.ToggleStamina(turnOn);},turnOn?"正在开启无限体力":"正在关闭无限体力");
         };
         save.Click+=async delegate {
             if(runtime.Running) {
@@ -149,7 +155,7 @@ public sealed class MainForm : Form {
             busy=false;
             if(!IsDisposed&&!Disposing){
                 cancel.Enabled=false;progress.Style=ProgressBarStyle.Continuous;
-                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady&&runtime.DayNightReady&&runtime.DamageBoostReady){progress.Value=1000;location.Text="定位完成，可以使用功能开关、昼夜调整和伤害提升";}
+                if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady&&runtime.DayNightReady&&runtime.DamageBoostReady&&runtime.StaminaReady){progress.Value=1000;location.Text="定位完成，可以使用功能开关、昼夜调整、伤害提升和无限体力";}
                 else if(runtime.Ready&&runtime.ZoomReady&&runtime.ShroudTravelReady){progress.Value=1000;location.Text="传送、缩放与瘴气传送已就绪 · "+runtime.DayNightStatus;}
                 else if(runtime.Ready&&runtime.ZoomReady){progress.Value=1000;location.Text="传送与缩放已就绪 · "+runtime.ShroudTravelStatus;}
                 else if(runtime.Ready){progress.Value=1000;location.Text=string.IsNullOrEmpty(runtime.ZoomStatus)?"传送已就绪，地图缩放尚未就绪":"传送已就绪 · "+runtime.ZoomStatus;}
@@ -249,6 +255,9 @@ public sealed class MainForm : Form {
         night.Enabled=!busy&&!closing&&runtime.DayNightReady;
         ApplyButtonStyle(damageBoost,runtime.DamageBoostEnabled);
         damageBoost.Enabled=!busy&&!closing&&(runtime.DamageBoostReady||runtime.DamageBoostEnabled);
+        stamina.Text=(runtime.StaminaEnabled||runtime.StaminaNeedsRestore)?"关闭无限体力":"无限体力";
+        ApplyButtonStyle(stamina,runtime.StaminaEnabled||runtime.StaminaNeedsRestore);
+        stamina.Enabled=!busy&&!closing&&(runtime.StaminaReady||runtime.StaminaNeedsRestore);
         save.Enabled=!closing;enableAll.Enabled=!busy&&!closing;
     }
 }

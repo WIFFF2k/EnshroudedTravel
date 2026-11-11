@@ -45,7 +45,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
     }
     public void Poll(bool retry,CancellationToken cancel) {
         // 同一进程复用已验证地址，新进程必须重新定位
-        if(retry && process!=null && !Ready && !ownsChange) {ReleaseExited();attemptedPid=0;}
+        if(retry && process!=null && !Ready && !ownsChange) {Restore();ReleaseExited();attemptedPid=0;}
         if(process!=null && !process.HasExited) {
             Running=true;
             if(ownsChange && SessionEnded()) { Toggle(false); Log("离开世界，已关闭传送"); }
@@ -56,6 +56,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
             Status=Enabled?"已启用 · 多类目标可传送":"已关闭 · 可直接启用";
             RefreshDayNightState();
             RefreshDamageBoostState();
+            RefreshStaminaState();
             return;
         }
         ReleaseExited();
@@ -86,6 +87,8 @@ public sealed partial class RuntimeTravelService : IDisposable {
             RefreshShroudTravelState();
             RefreshDayNightState();
             RefreshDamageBoostState();
+            RefreshStaminaState();
+            Log(StaminaReady?"无限体力已就绪：作用于统一体力消耗，可能影响其他实体":StaminaStatus);
             ResetLog();
             Connection="已连接 · PID "+process.Id+" · 支持运行中切换";
             Status=Enabled?"已启用 · 多类目标传送":"已关闭 · 可直接启用";
@@ -289,6 +292,9 @@ public sealed partial class RuntimeTravelService : IDisposable {
         if(process!=null && !process.HasExited && ownsDamageBoostChange) {
             try {ToggleDamageBoost(false);} catch(Exception ex) {errors.Add(ex);}
         }
+        if(process!=null && !process.HasExited && ownsStaminaChange) {
+            try {ToggleStamina(false);} catch(Exception ex) {errors.Add(ex);}
+        }
         if(errors.Count==1)throw errors[0];
         if(errors.Count>1)throw new AggregateException("MEMORY_RESTORE：多项内存修改均未完全恢复",errors);
         if(process==null || process.HasExited)ReleaseExited();
@@ -302,6 +308,7 @@ public sealed partial class RuntimeTravelService : IDisposable {
         ReleaseStorageUpgrade();
         ReleaseDayNight();
         ReleaseDamageBoost();
+        ReleaseStamina();
     }
     public void Dispose() {
         // 恢复失败必须交给界面显示，不能静默退出
