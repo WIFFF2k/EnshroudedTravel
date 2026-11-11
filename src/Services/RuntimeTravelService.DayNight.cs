@@ -5,9 +5,9 @@ using System.Threading;
 
 namespace EnshroudedTravel {
 public sealed partial class RuntimeTravelService {
-    private const int DayNightRootRva = 0x1FE5CC0;
-    private const int DayNightRootVtableRva = 0x1D482F0;
-    private const int DayNightSessionVtableRva = 0x1D48EE0;
+    private const int DayNightRootRva = 0x2006CC0;
+    private const int DayNightRootVtableRva = 0x1D68530;
+    private const int DayNightSessionVtableRva = 0x1D68EA8;
     private const long ClockDay = 86400000000000L;
     public bool DayNightReady { get; private set; }
     public string DayNightStatus { get; private set; }
@@ -74,7 +74,7 @@ public sealed partial class RuntimeTravelService {
     }
     private long ReadRawDayNightTime(DayNightSnapshot state) {
         // 复用游戏时钟算法：帧时长乘帧号，再应用时间基准、倍率与偏移
-        byte[] clock=ReadDayNightBytes(state.Clock+0xE16280,32);
+        byte[] clock=ReadDayNightBytes(state.Clock+0xE17E80,32);
         long step=BitConverter.ToInt64(clock,0);
         uint frame=BitConverter.ToUInt32(clock,28);
         if(step<=0 || frame==0)throw new IOException("DAY_NIGHT_CLOCK_NOT_READY：世界时钟尚未就绪");

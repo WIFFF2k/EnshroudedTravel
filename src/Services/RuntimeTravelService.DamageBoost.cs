@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 
 namespace EnshroudedTravel {
 public sealed partial class RuntimeTravelService {
-    private const int DamageBoostCallRva = 0x3D6D53;
+    private const int DamageBoostCallRva = 0x3DDA73;
     private const int DamageStubSize = 195;
     private long reportedDamageHits;
     private static readonly byte[] NativeDamageBoostCall = {0xE8,0x98,0x82,0x00,0x00};

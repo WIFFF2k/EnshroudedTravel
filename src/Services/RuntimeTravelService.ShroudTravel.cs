@@ -3,7 +3,7 @@ using System.IO;
 
 namespace EnshroudedTravel {
 public sealed partial class RuntimeTravelService {
-    private const int ShroudTravelCodeRva = 0xE793DE;
+    private const int ShroudTravelCodeRva = 0xE9041E;
     private const byte NativeShroudTravelCode = 0x74;
     private const byte AllowedShroudTravelCode = 0xEB;
     private long shroudTravelCodeAddress;

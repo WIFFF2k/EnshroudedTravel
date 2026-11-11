@@ -5,15 +5,15 @@ using System.Collections.Generic;
 
 namespace EnshroudedTravel {
 public sealed partial class RuntimeTravelService {
-    private const int ZoomArrayOffset = 93364;
-    private const int ZoomScaleOffset = 93476;
+    private const int ZoomArrayOffset = 93796;
+    private const int ZoomScaleOffset = 93908;
     private const int ZoomAnchorLength = 16;
-    private const int ZoomCodeRva = 0xC1EB03;
+    private const int ZoomCodeRva = 0xC2E483;
     private const byte NativeZoomCount = 4;
     private const byte ExtendedZoomCount = 5;
     private const int OriginalZoomBits = 0x3F333333;
     private const int ReducedZoomBits = 0x3EE66666;
-    private const string ZoomTemplateHash = "316d5476d609fe1e4e8c280733daf218a8cc3d8c6a2861717400417a79b694a8";
+    private const string ZoomTemplateHash = "90d21609dacfdc79ada0096762ca9cd45e4e0d654753f144e9603dc6ee9e7cbd";
     private const string ZoomCacheVersion = "zoom-v2";
     private readonly byte[] zoomTemplate;
     private readonly List<long> zoomAddresses = new List<long>();

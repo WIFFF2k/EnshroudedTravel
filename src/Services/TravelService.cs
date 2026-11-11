@@ -11,13 +11,13 @@ public sealed class TravelService {
     public readonly string Root;
     public readonly string Game;
     public readonly string Save;
-    public const string ExeHash = "d64966e23b1a458ee6f147bcbceac0b577fa7e39a212f371287d8cc119817882";
-    private const string KfcOriginalHash = "54a8cb76b3229c486ef55a7ababcd48828fa0ffc5bb144d206f687fd0ab00a92";
-    private const string ResourcesOriginalHash = "53786c45797d275661f3ccc1fd8c84527a74f376e01f05fc76351f91fb17cb3d";
+    public const string ExeHash = "5d9ef2f140b8ed49e30dbee655841b89d08baec20f799a1817e171a18a850c77";
+    private const string KfcOriginalHash = "2093a7cc0859ba2f878fc252a65c36b39605d7e1106e091c63809f6dea460bf5";
+    private const string ResourcesOriginalHash = "2f54eb9e4677f129c4d527aa9b163d89d0aecee70f2b5b728d7bacaa239d91a7";
     public readonly string[] Names = { "enshrouded.kfc", "enshrouded.kfc_resources" };
     public string LastBackup = "尚未执行本次备份";
     public Action<string> Log = delegate {};
-    private string ResourceBackup { get { return Path.Combine(Root, "backups", "resources-26082781"); } }
+    private string ResourceBackup { get { return Path.Combine(Root, "backups", "resources-26430625"); } }
     private string Journal { get { return Path.Combine(Root, "operation.pending"); } }
 
     public TravelService(string root, string game, string save) {
